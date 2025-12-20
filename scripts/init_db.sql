@@ -72,3 +72,152 @@ COMMENT ON TABLE decks IS 'Decks contain topics organized by user';
 COMMENT ON TABLE topics IS 'Topics represent subject areas with SRS parameters';
 COMMENT ON TABLE cards IS 'Cards belong to topics, polymorphic via card_data JSONB';
 COMMENT ON COLUMN cards.card_data IS 'JSONB storing type-specific fields (question, answer, choices, etc.)';
+
+-- ===========================================
+-- ROW LEVEL SECURITY (RLS) POLICIES
+-- ===========================================
+
+-- Enable RLS on all tables
+ALTER TABLE decks ENABLE ROW LEVEL SECURITY;
+ALTER TABLE topics ENABLE ROW LEVEL SECURITY;
+ALTER TABLE cards ENABLE ROW LEVEL SECURITY;
+
+-- ===========================================
+-- DECKS TABLE POLICIES
+-- ===========================================
+
+-- Users can select their own decks
+CREATE POLICY "Users can view own decks"
+ON decks FOR SELECT
+USING (auth.uid()::text = user_id);
+
+-- Users can insert their own decks
+CREATE POLICY "Users can create own decks"
+ON decks FOR INSERT
+WITH CHECK (auth.uid()::text = user_id);
+
+-- Users can update their own decks
+CREATE POLICY "Users can update own decks"
+ON decks FOR UPDATE
+USING (auth.uid()::text = user_id)
+WITH CHECK (auth.uid()::text = user_id);
+
+-- Users can delete their own decks
+CREATE POLICY "Users can delete own decks"
+ON decks FOR DELETE
+USING (auth.uid()::text = user_id);
+
+-- ===========================================
+-- TOPICS TABLE POLICIES
+-- ===========================================
+
+-- Users can select topics in their decks
+CREATE POLICY "Users can view topics in own decks"
+ON topics FOR SELECT
+USING (
+  EXISTS (
+    SELECT 1 FROM decks
+    WHERE decks.id = topics.deck_id
+    AND decks.user_id = auth.uid()::text
+  )
+);
+
+-- Users can insert topics into their decks
+CREATE POLICY "Users can create topics in own decks"
+ON topics FOR INSERT
+WITH CHECK (
+  EXISTS (
+    SELECT 1 FROM decks
+    WHERE decks.id = topics.deck_id
+    AND decks.user_id = auth.uid()::text
+  )
+);
+
+-- Users can update topics in their decks
+CREATE POLICY "Users can update topics in own decks"
+ON topics FOR UPDATE
+USING (
+  EXISTS (
+    SELECT 1 FROM decks
+    WHERE decks.id = topics.deck_id
+    AND decks.user_id = auth.uid()::text
+  )
+)
+WITH CHECK (
+  EXISTS (
+    SELECT 1 FROM decks
+    WHERE decks.id = topics.deck_id
+    AND decks.user_id = auth.uid()::text
+  )
+);
+
+-- Users can delete topics in their decks
+CREATE POLICY "Users can delete topics in own decks"
+ON topics FOR DELETE
+USING (
+  EXISTS (
+    SELECT 1 FROM decks
+    WHERE decks.id = topics.deck_id
+    AND decks.user_id = auth.uid()::text
+  )
+);
+
+-- ===========================================
+-- CARDS TABLE POLICIES
+-- ===========================================
+
+-- Users can select cards in their topics
+CREATE POLICY "Users can view cards in own topics"
+ON cards FOR SELECT
+USING (
+  EXISTS (
+    SELECT 1 FROM topics
+    JOIN decks ON topics.deck_id = decks.id
+    WHERE cards.topic_id = topics.id
+    AND decks.user_id = auth.uid()::text
+  )
+);
+
+-- Users can insert cards into their topics
+CREATE POLICY "Users can create cards in own topics"
+ON cards FOR INSERT
+WITH CHECK (
+  EXISTS (
+    SELECT 1 FROM topics
+    JOIN decks ON topics.deck_id = decks.id
+    WHERE cards.topic_id = topics.id
+    AND decks.user_id = auth.uid()::text
+  )
+);
+
+-- Users can update cards in their topics
+CREATE POLICY "Users can update cards in own topics"
+ON cards FOR UPDATE
+USING (
+  EXISTS (
+    SELECT 1 FROM topics
+    JOIN decks ON topics.deck_id = decks.id
+    WHERE cards.topic_id = topics.id
+    AND decks.user_id = auth.uid()::text
+  )
+)
+WITH CHECK (
+  EXISTS (
+    SELECT 1 FROM topics
+    JOIN decks ON topics.deck_id = decks.id
+    WHERE cards.topic_id = topics.id
+    AND decks.user_id = auth.uid()::text
+  )
+);
+
+-- Users can delete cards in their topics
+CREATE POLICY "Users can delete cards in own topics"
+ON cards FOR DELETE
+USING (
+  EXISTS (
+    SELECT 1 FROM topics
+    JOIN decks ON topics.deck_id = decks.id
+    WHERE cards.topic_id = topics.id
+    AND decks.user_id = auth.uid()::text
+  )
+);

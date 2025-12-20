@@ -1,12 +1,20 @@
 """
 Topic-Centric SRS API - FastAPI Application
 Main entry point for the API.
+
+Environment Variables Required:
+- SUPABASE_URL: Your Supabase project URL
+- SUPABASE_KEY: Your Supabase anon/public key
+- SUPABASE_JWT_SECRET: Your Supabase JWT secret (from Project Settings -> API -> JWT Secret)
+- JWT_ALGORITHM: JWT algorithm (default: HS256)
 """
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
+import os
 from contextlib import asynccontextmanager
 
-from app.routers import decks, topics, cards, review
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+from app.routers import cards, decks, review, topics
 
 
 @asynccontextmanager
@@ -14,6 +22,8 @@ async def lifespan(app: FastAPI):
     """Lifespan context manager for startup and shutdown events."""
     # Startup
     print("🚀 Starting Topic-Centric SRS API...")
+    print("🔒 JWT Authentication: Enabled")
+    print("🛡️  Row Level Security: Enabled")
     yield
     # Shutdown
     print("👋 Shutting down Topic-Centric SRS API...")
@@ -21,15 +31,17 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Topic-Centric SRS API",
-    description="A modular REST API for Spaced Repetition System with topic-based organization and weighted card sampling.",
+    description="A modular REST API for Spaced Repetition System with topic-based organization and weighted card sampling. Secured with Supabase JWT authentication and Row Level Security.",
     version="1.0.0",
     lifespan=lifespan
 )
 
 # CORS configuration
+# TODO: Update allow_origins with your frontend URL for production
+frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Configure appropriately for production
+    allow_origins=[frontend_url],  # Configure with your frontend URL
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

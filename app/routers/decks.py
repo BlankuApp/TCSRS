@@ -2,47 +2,66 @@
 Deck management endpoints.
 """
 from typing import List
-from fastapi import APIRouter, HTTPException, status
+
+from fastapi import APIRouter, Depends, HTTPException, status
+
+from app.dependencies.auth import get_current_user, get_jwt_token
 from app.models.schemas import Deck, DeckCreate, DeckUpdate
-from app.services.database import db
+from app.services.database import get_user_scoped_client
 
 router = APIRouter(prefix="/decks", tags=["decks"])
 
 
 @router.post("/", response_model=Deck, status_code=status.HTTP_201_CREATED)
-async def create_deck(deck: DeckCreate):
+async def create_deck(
+    deck: DeckCreate,
+    current_user: str = Depends(get_current_user),
+    jwt_token: str = Depends(get_jwt_token)
+):
     """Create a new deck."""
     try:
-        result = db.create_deck(
-            name=deck.name,
-            user_id=deck.user_id,
-            description=deck.description
-        )
-        if not result:
+        db = get_user_scoped_client(jwt_token)
+        result = db.table("decks").insert({
+            "name": deck.name,
+            "description": deck.description,
+            "user_id": current_user
+        }).execute()
+        
+        if not result.data:
             raise HTTPException(status_code=500, detail="Failed to create deck")
-        return result
+        return result.data[0]
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/", response_model=List[Deck])
-async def get_all_decks(user_id: str = None):
-    """Get all decks, optionally filtered by user_id."""
+async def get_all_decks(
+    current_user: str = Depends(get_current_user),
+    jwt_token: str = Depends(get_jwt_token)
+):
+    """Get all decks for the authenticated user."""
     try:
-        decks = db.get_all_decks(user_id=user_id)
-        return decks
+        db = get_user_scoped_client(jwt_token)
+        response = db.table("decks").select("*").execute()
+        return response.data if response.data else []
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/{deck_id}", response_model=Deck)
-async def get_deck(deck_id: str):
+async def get_deck(
+    deck_id: str,
+    current_user: str = Depends(get_current_user),
+    jwt_token: str = Depends(get_jwt_token)
+):
     """Get a specific deck by ID."""
     try:
-        deck = db.get_deck(deck_id)
-        if not deck:
+        db = get_user_scoped_client(jwt_token)
+        response = db.table("decks").select("*").eq("id", deck_id).execute()
+        
+        if not response.data:
             raise HTTPException(status_code=404, detail="Deck not found")
-        return deck
+        return response.data[0]
     except HTTPException:
         raise
     except Exception as e:
@@ -50,22 +69,34 @@ async def get_deck(deck_id: str):
 
 
 @router.patch("/{deck_id}", response_model=Deck)
-async def update_deck(deck_id: str, deck_update: DeckUpdate):
+async def update_deck(
+    deck_id: str,
+    deck_update: DeckUpdate,
+    current_user: str = Depends(get_current_user),
+    jwt_token: str = Depends(get_jwt_token)
+):
     """Update a deck."""
     try:
-        # Check if deck exists
-        existing = db.get_deck(deck_id)
-        if not existing:
-            raise HTTPException(status_code=404, detail="Deck not found")
+        db = get_user_scoped_client(jwt_token)
         
-        result = db.update_deck(
-            deck_id=deck_id,
-            name=deck_update.name,
-            description=deck_update.description
-        )
-        if not result:
-            raise HTTPException(status_code=500, detail="Failed to update deck")
-        return result
+        # Build update data
+        data = {}
+        if deck_update.name is not None:
+            data["name"] = deck_update.name
+        if deck_update.description is not None:
+            data["description"] = deck_update.description
+        
+        if not data:
+            # No updates, just fetch and return
+            response = db.table("decks").select("*").eq("id", deck_id).execute()
+            if not response.data:
+                raise HTTPException(status_code=404, detail="Deck not found")
+            return response.data[0]
+        
+        result = db.table("decks").update(data).eq("id", deck_id).execute()
+        if not result.data:
+            raise HTTPException(status_code=404, detail="Deck not found")
+        return result.data[0]
     except HTTPException:
         raise
     except Exception as e:
@@ -73,17 +104,18 @@ async def update_deck(deck_id: str, deck_update: DeckUpdate):
 
 
 @router.delete("/{deck_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_deck(deck_id: str):
+async def delete_deck(
+    deck_id: str,
+    current_user: str = Depends(get_current_user),
+    jwt_token: str = Depends(get_jwt_token)
+):
     """Delete a deck and all its topics/cards."""
     try:
-        # Check if deck exists
-        existing = db.get_deck(deck_id)
-        if not existing:
-            raise HTTPException(status_code=404, detail="Deck not found")
+        db = get_user_scoped_client(jwt_token)
+        result = db.table("decks").delete().eq("id", deck_id).execute()
         
-        success = db.delete_deck(deck_id)
-        if not success:
-            raise HTTPException(status_code=500, detail="Failed to delete deck")
+        if not result.data:
+            raise HTTPException(status_code=404, detail="Deck not found")
     except HTTPException:
         raise
     except Exception as e:

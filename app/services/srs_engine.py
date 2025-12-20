@@ -4,8 +4,7 @@ Implements stability/difficulty updates and stochastic card sampling.
 """
 import random
 from datetime import datetime, timedelta
-from typing import List, Optional, Dict, Any
-
+from typing import Any, Dict, List, Optional
 
 # Constants
 MIN_STABILITY = 2.4  # hours

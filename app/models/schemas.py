@@ -3,7 +3,8 @@ Pydantic models and schemas for the Topic-Centric SRS API.
 All text fields in cards support Markdown formatting.
 """
 from datetime import datetime
-from typing import Optional, List, Union, Literal
+from typing import List, Literal, Optional, Union
+
 from pydantic import BaseModel, Field, field_validator
 
 
@@ -21,7 +22,6 @@ class DeckCreate(BaseModel):
     """Schema for creating a new deck."""
     name: str = Field(..., min_length=1, max_length=255)
     description: Optional[str] = None
-    user_id: str = Field(..., min_length=1)
 
 
 class DeckUpdate(BaseModel):

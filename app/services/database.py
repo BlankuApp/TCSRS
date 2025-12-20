@@ -2,12 +2,13 @@
 Database service for Supabase operations.
 Provides CRUD functions for decks, topics, and cards.
 """
-import os
-from typing import List, Optional, Dict, Any
-from datetime import datetime
-from dotenv import load_dotenv
-from supabase import create_client, Client
 import json
+import os
+from datetime import datetime
+from typing import Any, Dict, List, Optional
+
+from dotenv import load_dotenv
+from supabase import Client, create_client
 
 load_dotenv()
 
@@ -16,6 +17,22 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
 if not SUPABASE_URL or not SUPABASE_KEY:
     raise ValueError("SUPABASE_URL and SUPABASE_KEY must be set in environment variables")
+
+
+def get_user_scoped_client(jwt_token: str) -> Client:
+    """
+    Create a Supabase client with the user's JWT token for RLS enforcement.
+    
+    Args:
+        jwt_token: The user's JWT token from authentication
+        
+    Returns:
+        Supabase client configured with user's JWT
+    """
+    supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+    # Set the JWT token for RLS enforcement
+    supabase.postgrest.auth(jwt_token)
+    return supabase
 
 
 class DatabaseService:

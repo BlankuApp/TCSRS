@@ -5,8 +5,9 @@ This script drops all tables and recreates them using init_db.sql
 import os
 import sys
 from pathlib import Path
+
 from dotenv import load_dotenv
-from supabase import create_client, Client
+from supabase import Client, create_client
 
 # Add parent directory to path for imports
 sys.path.append(str(Path(__file__).parent.parent))
@@ -58,7 +59,7 @@ def reset_database():
             if statement:
                 try:
                     supabase.rpc('exec_sql', {'sql': statement}).execute()
-                    print(f"  ✓ Executed statement")
+                    print("  ✓ Executed statement")
                 except Exception as e:
                     print(f"  ⚠️  Warning: {str(e)}")
         

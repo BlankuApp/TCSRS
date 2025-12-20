@@ -43,6 +43,7 @@ Thumbs.db
 
 # Logs
 *.log
+ai_reports/
 
 # Testing
 .pytest_cache/

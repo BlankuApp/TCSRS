@@ -1,14 +1,20 @@
 """
 Review endpoints for SRS operations.
 """
+import json
 from typing import Union
-from fastapi import APIRouter, HTTPException, status
+
+from fastapi import APIRouter, Depends, HTTPException
+
+from app.dependencies.auth import get_current_user, get_jwt_token
 from app.models.schemas import (
-    QAHintCard, MultipleChoiceCard,
-    ReviewSubmission, ReviewResponse
+    MultipleChoiceCard,
+    QAHintCard,
+    ReviewResponse,
+    ReviewSubmission,
 )
-from app.services.database import db
-from app.services.srs_engine import sample_card, process_review
+from app.services.database import get_user_scoped_client
+from app.services.srs_engine import process_review, sample_card
 
 router = APIRouter(prefix="/review", tags=["review"])
 
@@ -17,6 +23,10 @@ def _card_db_to_schema(card_db: dict) -> Union[QAHintCard, MultipleChoiceCard]:
     """Convert database card representation to Pydantic schema."""
     card_type = card_db.get("card_type")
     card_data = card_db.get("card_data", {})
+    
+    # Parse JSONB if needed
+    if isinstance(card_data, str):
+        card_data = json.loads(card_data)
     
     base_fields = {
         "id": card_db["id"],
@@ -46,20 +56,28 @@ def _card_db_to_schema(card_db: dict) -> Union[QAHintCard, MultipleChoiceCard]:
 
 
 @router.get("/topics/{topic_id}/review-card", response_model=Union[QAHintCard, MultipleChoiceCard])
-async def get_review_card(topic_id: str):
+async def get_review_card(
+    topic_id: str,
+    current_user: str = Depends(get_current_user),
+    jwt_token: str = Depends(get_jwt_token)
+):
     """
     Get a single card for review from the topic.
     Uses stochastic sampling weighted by intrinsic_weight.
     Returns the full card including answer/correct_index.
     """
     try:
-        # Verify topic exists
-        topic = db.get_topic(topic_id)
-        if not topic:
+        db = get_user_scoped_client(jwt_token)
+        
+        # Verify topic exists and user owns it (RLS will handle this)
+        topic_response = db.table("topics").select("*").eq("id", topic_id).execute()
+        if not topic_response.data:
             raise HTTPException(status_code=404, detail="Topic not found")
         
         # Get all cards for the topic
-        cards = db.get_cards_by_topic(topic_id)
+        cards_response = db.table("cards").select("*").eq("topic_id", topic_id).execute()
+        cards = cards_response.data if cards_response.data else []
+        
         if not cards:
             raise HTTPException(status_code=404, detail="No cards found for this topic")
         
@@ -76,7 +94,12 @@ async def get_review_card(topic_id: str):
 
 
 @router.post("/topics/{topic_id}/submit-review", response_model=ReviewResponse)
-async def submit_review(topic_id: str, review: ReviewSubmission):
+async def submit_review(
+    topic_id: str,
+    review: ReviewSubmission,
+    current_user: str = Depends(get_current_user),
+    jwt_token: str = Depends(get_jwt_token)
+):
     """
     Submit a review for a topic.
     Updates the topic's SRS parameters (stability, difficulty, next_review).
@@ -85,15 +108,20 @@ async def submit_review(topic_id: str, review: ReviewSubmission):
     The card reviewed should be retrieved first via GET /review/topics/{topic_id}/review-card.
     """
     try:
-        # Verify topic exists
-        topic = db.get_topic(topic_id)
-        if not topic:
+        db = get_user_scoped_client(jwt_token)
+        
+        # Verify topic exists and user owns it (RLS will handle this)
+        topic_response = db.table("topics").select("*").eq("id", topic_id).execute()
+        if not topic_response.data:
             raise HTTPException(status_code=404, detail="Topic not found")
+        topic = topic_response.data[0]
         
         # Get cards to determine intrinsic weight of last reviewed card
         # In a real implementation, you'd track which card was just reviewed
         # For now, we'll sample again to get a representative weight
-        cards = db.get_cards_by_topic(topic_id)
+        cards_response = db.table("cards").select("*").eq("topic_id", topic_id).execute()
+        cards = cards_response.data if cards_response.data else []
+        
         if not cards:
             raise HTTPException(status_code=404, detail="No cards found for this topic")
         
@@ -111,8 +139,8 @@ async def submit_review(topic_id: str, review: ReviewSubmission):
         )
         
         # Update the topic in the database
-        updated_topic = db.update_topic(topic_id=topic_id, **updates)
-        if not updated_topic:
+        updated_result = db.table("topics").update(updates).eq("id", topic_id).execute()
+        if not updated_result.data:
             raise HTTPException(status_code=500, detail="Failed to update topic")
         
         return ReviewResponse(
