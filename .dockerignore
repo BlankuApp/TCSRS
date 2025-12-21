@@ -56,6 +56,10 @@ docs/
 # Scripts (not needed in production)
 scripts/
 
+# AI Reports and Documentation
+ai_reports/
+README.md
+
 # Testing
 .pytest_cache/
 .coverage
