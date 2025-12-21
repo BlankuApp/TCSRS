@@ -14,7 +14,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routers import cards, decks, review, topics
+from app.routers import cards, decks, profile, review, topics
 
 
 @asynccontextmanager
@@ -52,6 +52,7 @@ app.include_router(decks.router)
 app.include_router(topics.router)
 app.include_router(cards.router)
 app.include_router(review.router)
+app.include_router(profile.router)
 
 
 @app.get("/", tags=["health"])

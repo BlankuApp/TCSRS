@@ -35,12 +35,24 @@ CREATE TABLE IF NOT EXISTS cards (
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- Create user_profiles table
+CREATE TABLE IF NOT EXISTS user_profiles (
+    user_id VARCHAR(255) PRIMARY KEY,
+    username VARCHAR(50) NOT NULL UNIQUE,
+    avatar TEXT,
+    role VARCHAR(20) NOT NULL DEFAULT 'user' CHECK (role IN ('user', 'admin')),
+    ai_prompts JSONB NOT NULL DEFAULT '{}',
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- Create indexes for performance
 CREATE INDEX IF NOT EXISTS idx_topics_deck_id ON topics(deck_id);
 CREATE INDEX IF NOT EXISTS idx_topics_next_review ON topics(next_review);
 CREATE INDEX IF NOT EXISTS idx_cards_topic_id ON cards(topic_id);
 CREATE INDEX IF NOT EXISTS idx_cards_card_type ON cards(card_type);
 CREATE INDEX IF NOT EXISTS idx_decks_user_id ON decks(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_profiles_username ON user_profiles(username);
 
 -- Create updated_at trigger function
 CREATE OR REPLACE FUNCTION update_updated_at_column()
@@ -67,6 +79,13 @@ CREATE TRIGGER update_cards_updated_at
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
 
+CREATE TRIGGER update_user_profiles_updated_at
+    BEFORE UPDATE ON user_profiles
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+COMMENT ON TABLE user_profiles IS 'User profile information with role and AI prompt preferences. Role changes require manual database updates.';
+COMMENT ON COLUMN user_profiles.ai_prompts IS 'JSONB storing custom AI prompts dictionary for different operations';
 -- Comments for documentation
 COMMENT ON TABLE decks IS 'Decks contain topics organized by user';
 COMMENT ON TABLE topics IS 'Topics represent subject areas with SRS parameters';
@@ -79,6 +98,7 @@ COMMENT ON COLUMN cards.card_data IS 'JSONB storing type-specific fields (questi
 
 -- Enable RLS on all tables
 ALTER TABLE decks ENABLE ROW LEVEL SECURITY;
+ALTER TABLE user_profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE topics ENABLE ROW LEVEL SECURITY;
 ALTER TABLE cards ENABLE ROW LEVEL SECURITY;
 
@@ -219,5 +239,30 @@ USING (
     JOIN decks ON topics.deck_id = decks.id
     WHERE cards.topic_id = topics.id
     AND decks.user_id = auth.uid()::text
-  )
+  
+
+-- ===========================================
+-- USER_PROFILES TABLE POLICIES
+-- ===========================================
+
+-- All authenticated users can view any user profile
+CREATE POLICY "Authenticated users can view all profiles"
+ON user_profiles FOR SELECT
+USING (auth.uid() IS NOT NULL);
+
+-- Users can insert their own profile
+CREATE POLICY "Users can create own profile"
+ON user_profiles FOR INSERT
+WITH CHECK (auth.uid()::text = user_id);
+
+-- Users can update their own profile
+CREATE POLICY "Users can update own profile"
+ON user_profiles FOR UPDATE
+USING (auth.uid()::text = user_id)
+WITH CHECK (auth.uid()::text = user_id);
+
+-- Users can delete their own profile
+CREATE POLICY "Users can delete own profile"
+ON user_profiles FOR DELETE
+USING (auth.uid()::text = user_id);)
 );
