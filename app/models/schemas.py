@@ -3,7 +3,7 @@ Pydantic models and schemas for the Topic-Centric SRS API.
 All text fields in cards support Markdown formatting.
 """
 from datetime import datetime
-from typing import List, Literal, Optional, Union
+from typing import Dict, List, Literal, Optional, Union
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -30,64 +30,38 @@ class DeckUpdate(BaseModel):
     prompt: Optional[str] = Field(None, min_length=1)
 
 
-class Topic(BaseModel):
-    """Represents a topic with SRS parameters."""
-    id: str
-    deck_id: str
-    name: str
-    stability: float = Field(default=24.0, gt=0, description="Memory stability in hours")
-    difficulty: float = Field(default=5.0, ge=1, le=10, description="Topic difficulty (1-10)")
-    next_review: datetime
-    last_reviewed: Optional[datetime] = None
-    created_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
+# =====================
+# Card Item Models (no id/timestamps, stored as JSONB in topics)
+# =====================
 
-
-class TopicCreate(BaseModel):
-    """Schema for creating a new topic."""
-    deck_id: str
-    name: str = Field(..., min_length=1, max_length=255)
-    stability: float = Field(default=24.0, gt=0, description="Memory stability in hours")
-    difficulty: float = Field(default=5.0, ge=1, le=10, description="Topic difficulty (1-10)")
-
-
-class TopicUpdate(BaseModel):
-    """Schema for updating a topic."""
-    name: Optional[str] = Field(None, min_length=1, max_length=255)
-    stability: Optional[float] = Field(None, gt=0)
-    difficulty: Optional[float] = Field(None, ge=1, le=10)
-
-
-class CardBase(BaseModel):
-    """Base class for all card types. All text fields render as Markdown in the UI."""
-    id: str
-    topic_id: str
-    card_type: str
+class CardItem(BaseModel):
+    """
+    Base card item stored in topics.cards JSONB array.
+    Contains only card_type, intrinsic_weight, and card_data.
+    """
+    card_type: Literal["qa_hint", "multiple_choice"]
     intrinsic_weight: float = Field(
-        default=1.0, 
-        ge=0.5, 
-        le=2.0, 
+        default=1.0,
+        ge=0.5,
+        le=2.0,
         description="Intrinsic weight representing card importance (0.5-2.0)"
     )
-    created_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
+    card_data: Dict = Field(..., description="Type-specific card data (question, answer, choices, etc.)")
 
 
-class QAHintCard(CardBase):
-    """Question-Answer card with optional hint. All fields support Markdown formatting."""
-    card_type: Literal["qa_hint"] = "qa_hint"
-    question: str = Field(..., description="Question text (Markdown supported)")
-    answer: str = Field(..., description="Answer text (Markdown supported)")
+class QAHintCardData(BaseModel):
+    """Data structure for QA Hint card type."""
+    question: str = Field(..., min_length=1, description="Question text (Markdown supported)")
+    answer: str = Field(..., min_length=1, description="Answer text (Markdown supported)")
     hint: str = Field(default="", description="Optional hint text (Markdown supported)")
 
 
-class MultipleChoiceCard(CardBase):
-    """Multiple choice question card. All text fields support Markdown formatting."""
-    card_type: Literal["multiple_choice"] = "multiple_choice"
-    question: str = Field(..., description="Question text (Markdown supported)")
-    choices: List[str] = Field(..., description="List of answer choices (Markdown supported)")
-    correct_index: int = Field(..., description="Index of the correct answer (0-based)")
-    
+class MultipleChoiceCardData(BaseModel):
+    """Data structure for Multiple Choice card type."""
+    question: str = Field(..., min_length=1, description="Question text (Markdown supported)")
+    choices: List[str] = Field(..., min_items=2, description="List of answer choices (Markdown supported)")
+    correct_index: int = Field(..., ge=0, description="Index of the correct answer (0-based)")
+
     @field_validator('correct_index')
     @classmethod
     def validate_correct_index(cls, v, info):
@@ -99,13 +73,72 @@ class MultipleChoiceCard(CardBase):
         return v
 
 
-# Discriminated union for Card types
-Card = Union[QAHintCard, MultipleChoiceCard]
+# =====================
+# Topic Models
+# =====================
+
+class Topic(BaseModel):
+    """Represents a topic with SRS parameters and embedded cards."""
+    id: str
+    deck_id: str
+    name: str
+    stability: float = Field(default=24.0, gt=0, description="Memory stability in hours")
+    difficulty: float = Field(default=5.0, ge=1, le=10, description="Topic difficulty (1-10)")
+    next_review: datetime
+    last_reviewed: Optional[datetime] = None
+    cards: List[CardItem] = Field(default_factory=list, description="Array of cards (max 25)")
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+    @field_validator('cards')
+    @classmethod
+    def validate_cards_limit(cls, v):
+        """Ensure cards array doesn't exceed 25 items."""
+        if len(v) > 25:
+            raise ValueError("Topic cannot have more than 25 cards")
+        return v
+
+
+class TopicCreate(BaseModel):
+    """Schema for creating a new topic."""
+    deck_id: str
+    name: str = Field(..., min_length=1, max_length=255)
+    stability: float = Field(default=24.0, gt=0, description="Memory stability in hours")
+    difficulty: float = Field(default=5.0, ge=1, le=10, description="Topic difficulty (1-10)")
+    cards: List[CardItem] = Field(default_factory=list, description="Initial cards (optional, max 25)")
+
+    @field_validator('cards')
+    @classmethod
+    def validate_cards_limit(cls, v):
+        """Ensure cards array doesn't exceed 25 items."""
+        if len(v) > 25:
+            raise ValueError("Topic cannot have more than 25 cards")
+        return v
+
+
+class TopicUpdate(BaseModel):
+    """Schema for updating a topic."""
+    name: Optional[str] = Field(None, min_length=1, max_length=255)
+    stability: Optional[float] = Field(None, gt=0)
+    difficulty: Optional[float] = Field(None, ge=1, le=10)
+    cards: Optional[List[CardItem]] = Field(None, description="Update entire cards array (max 25)")
+
+    @field_validator('cards')
+    @classmethod
+    def validate_cards_limit(cls, v):
+        """Ensure cards array doesn't exceed 25 items."""
+        if v is not None and len(v) > 25:
+            raise ValueError("Topic cannot have more than 25 cards")
+        return v
+
+
+# =====================
+# Card Create Schemas (for adding cards to topics)
+# =====================
 
 
 class QAHintCardCreate(BaseModel):
-    """Schema for creating a QA Hint card."""
-    topic_id: str
+    """Schema for creating a QA Hint card to add to a topic."""
     card_type: Literal["qa_hint"] = "qa_hint"
     question: str = Field(..., min_length=1)
     answer: str = Field(..., min_length=1)
@@ -114,14 +147,13 @@ class QAHintCardCreate(BaseModel):
 
 
 class MultipleChoiceCardCreate(BaseModel):
-    """Schema for creating a Multiple Choice card."""
-    topic_id: str
+    """Schema for creating a Multiple Choice card to add to a topic."""
     card_type: Literal["multiple_choice"] = "multiple_choice"
     question: str = Field(..., min_length=1)
     choices: List[str] = Field(..., min_items=2)
     correct_index: int = Field(..., ge=0)
     intrinsic_weight: float = Field(default=1.0, ge=0.5, le=2.0)
-    
+
     @field_validator('correct_index')
     @classmethod
     def validate_correct_index(cls, v, info):
@@ -137,8 +169,21 @@ CardCreate = Union[QAHintCardCreate, MultipleChoiceCardCreate]
 
 
 class CardUpdate(BaseModel):
-    """Schema for updating a card (type-agnostic fields only)."""
-    intrinsic_weight: Optional[float] = Field(None, ge=0.5, le=2.0)
+    """Schema for updating a card's intrinsic weight."""
+    intrinsic_weight: float = Field(..., ge=0.5, le=2.0)
+
+
+# =====================
+# Review Models
+# =====================
+
+class ReviewCardItem(BaseModel):
+    """Card item for review with card index."""
+    card_index: int = Field(..., description="Index of the card in the topic's cards array")
+    topic_id: str = Field(..., description="ID of the parent topic")
+    card_type: Literal["qa_hint", "multiple_choice"]
+    intrinsic_weight: float
+    card_data: Dict = Field(..., description="Card content (question, answer, choices, etc.)")
 
 
 class ReviewSubmission(BaseModel):
@@ -155,15 +200,16 @@ class ReviewResponse(BaseModel):
     message: str
 
 
-# Union type for review cards (topic_id already included in CardBase)
-ReviewCardItem = Union[QAHintCard, MultipleChoiceCard]
-
-
 class DeckReviewResponse(BaseModel):
     """Response containing cards to review from a deck."""
     cards: List[ReviewCardItem] = Field(..., description="List of cards to review (max 100)")
     total_due: int = Field(..., description="Total number of due topics in the deck")
     deck_id: str = Field(..., description="ID of the deck being reviewed")
+
+
+# =====================
+# User Profile Models
+# =====================
 
 
 class UserProfile(BaseModel):

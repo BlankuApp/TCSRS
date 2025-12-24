@@ -14,7 +14,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routers import cards, decks, profile, review, topics
+from app.routers import decks, profile, review, topics
 
 
 @asynccontextmanager
@@ -31,7 +31,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Topic-Centric SRS API",
-    description="A modular REST API for Spaced Repetition System with topic-based organization and weighted card sampling. Secured with Supabase JWT authentication and Row Level Security.",
+    description="A modular REST API for Spaced Repetition System with topic-based organization and embedded cards. Secured with Supabase JWT authentication and Row Level Security.",
     version="1.0.0",
     lifespan=lifespan
 )
@@ -47,10 +47,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Register routers
+# Register routers (cards router removed - operations now in topics router)
 app.include_router(decks.router)
 app.include_router(topics.router)
-app.include_router(cards.router)
 app.include_router(review.router)
 app.include_router(profile.router)
 

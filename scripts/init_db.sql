@@ -20,17 +20,7 @@ CREATE TABLE IF NOT EXISTS topics (
     difficulty DOUBLE PRECISION NOT NULL DEFAULT 5.0 CHECK (difficulty >= 1 AND difficulty <= 10),
     next_review TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     last_reviewed TIMESTAMPTZ,
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Create cards table with polymorphic card_data JSONB column
-CREATE TABLE IF NOT EXISTS cards (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    topic_id UUID NOT NULL REFERENCES topics(id) ON DELETE CASCADE,
-    card_type VARCHAR(50) NOT NULL CHECK (card_type IN ('qa_hint', 'multiple_choice')),
-    intrinsic_weight DOUBLE PRECISION NOT NULL DEFAULT 1.0 CHECK (intrinsic_weight >= 0.5 AND intrinsic_weight <= 2.0),
-    card_data JSONB NOT NULL,
+    cards JSONB NOT NULL DEFAULT '[]'::jsonb,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -49,8 +39,6 @@ CREATE TABLE IF NOT EXISTS user_profiles (
 -- Create indexes for performance
 CREATE INDEX IF NOT EXISTS idx_topics_deck_id ON topics(deck_id);
 CREATE INDEX IF NOT EXISTS idx_topics_next_review ON topics(next_review);
-CREATE INDEX IF NOT EXISTS idx_cards_topic_id ON cards(topic_id);
-CREATE INDEX IF NOT EXISTS idx_cards_card_type ON cards(card_type);
 CREATE INDEX IF NOT EXISTS idx_decks_user_id ON decks(user_id);
 CREATE INDEX IF NOT EXISTS idx_user_profiles_username ON user_profiles(username);
 
@@ -74,23 +62,17 @@ CREATE TRIGGER update_topics_updated_at
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
 
-CREATE TRIGGER update_cards_updated_at
-    BEFORE UPDATE ON cards
-    FOR EACH ROW
-    EXECUTE FUNCTION update_updated_at_column();
-
 CREATE TRIGGER update_user_profiles_updated_at
     BEFORE UPDATE ON user_profiles
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
 
-COMMENT ON TABLE user_profiles IS 'User profile information with role and AI prompt preferences. Role changes require manual database updates.';
-COMMENT ON COLUMN user_profiles.ai_prompts IS 'JSONB storing custom AI prompts dictionary for different operations';
 -- Comments for documentation
 COMMENT ON TABLE decks IS 'Decks contain topics organized by user';
-COMMENT ON TABLE topics IS 'Topics represent subject areas with SRS parameters';
-COMMENT ON TABLE cards IS 'Cards belong to topics, polymorphic via card_data JSONB';
-COMMENT ON COLUMN cards.card_data IS 'JSONB storing type-specific fields (question, answer, choices, etc.)';
+COMMENT ON TABLE topics IS 'Topics represent subject areas with SRS parameters and embedded cards array';
+COMMENT ON COLUMN topics.cards IS 'JSONB array storing cards with card_type, intrinsic_weight, and card_data fields';
+COMMENT ON TABLE user_profiles IS 'User profile information with role and AI prompt preferences. Role changes require manual database updates.';
+COMMENT ON COLUMN user_profiles.ai_prompts IS 'JSONB storing custom AI prompts dictionary for different operations';
 
 -- ===========================================
 -- ROW LEVEL SECURITY (RLS) POLICIES
@@ -100,7 +82,6 @@ COMMENT ON COLUMN cards.card_data IS 'JSONB storing type-specific fields (questi
 ALTER TABLE decks ENABLE ROW LEVEL SECURITY;
 ALTER TABLE user_profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE topics ENABLE ROW LEVEL SECURITY;
-ALTER TABLE cards ENABLE ROW LEVEL SECURITY;
 
 -- ===========================================
 -- DECKS TABLE POLICIES
@@ -178,66 +159,6 @@ USING (
   EXISTS (
     SELECT 1 FROM decks
     WHERE decks.id = topics.deck_id
-    AND decks.user_id = auth.uid()::text
-  )
-);
-
--- ===========================================
--- CARDS TABLE POLICIES
--- ===========================================
-
--- Users can select cards in their topics
-CREATE POLICY "Users can view cards in own topics"
-ON cards FOR SELECT
-USING (
-  EXISTS (
-    SELECT 1 FROM topics
-    JOIN decks ON topics.deck_id = decks.id
-    WHERE cards.topic_id = topics.id
-    AND decks.user_id = auth.uid()::text
-  )
-);
-
--- Users can insert cards into their topics
-CREATE POLICY "Users can create cards in own topics"
-ON cards FOR INSERT
-WITH CHECK (
-  EXISTS (
-    SELECT 1 FROM topics
-    JOIN decks ON topics.deck_id = decks.id
-    WHERE cards.topic_id = topics.id
-    AND decks.user_id = auth.uid()::text
-  )
-);
-
--- Users can update cards in their topics
-CREATE POLICY "Users can update cards in own topics"
-ON cards FOR UPDATE
-USING (
-  EXISTS (
-    SELECT 1 FROM topics
-    JOIN decks ON topics.deck_id = decks.id
-    WHERE cards.topic_id = topics.id
-    AND decks.user_id = auth.uid()::text
-  )
-)
-WITH CHECK (
-  EXISTS (
-    SELECT 1 FROM topics
-    JOIN decks ON topics.deck_id = decks.id
-    WHERE cards.topic_id = topics.id
-    AND decks.user_id = auth.uid()::text
-  )
-);
-
--- Users can delete cards in their topics
-CREATE POLICY "Users can delete cards in own topics"
-ON cards FOR DELETE
-USING (
-  EXISTS (
-    SELECT 1 FROM topics
-    JOIN decks ON topics.deck_id = decks.id
-    WHERE cards.topic_id = topics.id
     AND decks.user_id = auth.uid()::text
   )
 );
