@@ -12,7 +12,7 @@ class Deck(BaseModel):
     """Represents a deck containing topics."""
     id: str
     name: str
-    description: Optional[str] = None
+    prompt: str
     user_id: str  # Owner of the deck
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
@@ -21,13 +21,13 @@ class Deck(BaseModel):
 class DeckCreate(BaseModel):
     """Schema for creating a new deck."""
     name: str = Field(..., min_length=1, max_length=255)
-    description: Optional[str] = None
+    prompt: str = Field(..., min_length=1)
 
 
 class DeckUpdate(BaseModel):
     """Schema for updating a deck."""
     name: Optional[str] = Field(None, min_length=1, max_length=255)
-    description: Optional[str] = None
+    prompt: Optional[str] = Field(None, min_length=1)
 
 
 class Topic(BaseModel):

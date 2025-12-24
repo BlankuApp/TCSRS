@@ -5,7 +5,7 @@
 CREATE TABLE IF NOT EXISTS decks (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name VARCHAR(255) NOT NULL,
-    description TEXT,
+    prompt TEXT NOT NULL,
     user_id VARCHAR(255) NOT NULL,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
@@ -239,7 +239,8 @@ USING (
     JOIN decks ON topics.deck_id = decks.id
     WHERE cards.topic_id = topics.id
     AND decks.user_id = auth.uid()::text
-  
+  )
+);
 
 -- ===========================================
 -- USER_PROFILES TABLE POLICIES
@@ -264,5 +265,4 @@ WITH CHECK (auth.uid()::text = user_id);
 -- Users can delete their own profile
 CREATE POLICY "Users can delete own profile"
 ON user_profiles FOR DELETE
-USING (auth.uid()::text = user_id);)
-);
+USING (auth.uid()::text = user_id);

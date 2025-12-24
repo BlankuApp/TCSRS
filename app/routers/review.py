@@ -2,6 +2,7 @@
 Review endpoints for SRS operations.
 """
 import json
+from datetime import datetime
 from typing import Union
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -137,9 +138,16 @@ async def submit_review(
             base_score=review.base_score,
             intrinsic_weight=intrinsic_weight
         )
+        print(updates)
+
+        # Supabase client requires JSON-serializable payloads
+        db_updates = {
+            key: (value.isoformat() if isinstance(value, datetime) else value)
+            for key, value in updates.items()
+        }
         
         # Update the topic in the database
-        updated_result = db.table("topics").update(updates).eq("id", topic_id).execute()
+        updated_result = db.table("topics").update(db_updates).eq("id", topic_id).execute()
         if not updated_result.data:
             raise HTTPException(status_code=500, detail="Failed to update topic")
         

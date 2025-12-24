@@ -23,7 +23,7 @@ async def create_deck(
         db = get_user_scoped_client(jwt_token)
         result = db.table("decks").insert({
             "name": deck.name,
-            "description": deck.description,
+            "prompt": deck.prompt,
             "user_id": current_user
         }).execute()
         
@@ -83,8 +83,8 @@ async def update_deck(
         data = {}
         if deck_update.name is not None:
             data["name"] = deck_update.name
-        if deck_update.description is not None:
-            data["description"] = deck_update.description
+        if deck_update.prompt is not None:
+            data["prompt"] = deck_update.prompt
         
         if not data:
             # No updates, just fetch and return

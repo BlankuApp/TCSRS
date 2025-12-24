@@ -59,12 +59,12 @@ class DatabaseService:
     # Deck Operations
     # =====================
     
-    def create_deck(self, name: str, user_id: str, description: Optional[str] = None) -> Dict[str, Any]:
+    def create_deck(self, name: str, user_id: str, prompt: str) -> Dict[str, Any]:
         """Create a new deck."""
         data = {
             "name": name,
             "user_id": user_id,
-            "description": description
+            "prompt": prompt
         }
         response = self.client.table("decks").insert(data).execute()
         return response.data[0] if response.data else None
@@ -82,13 +82,13 @@ class DatabaseService:
         response = query.execute()
         return response.data if response.data else []
     
-    def update_deck(self, deck_id: str, name: Optional[str] = None, description: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    def update_deck(self, deck_id: str, name: Optional[str] = None, prompt: Optional[str] = None) -> Optional[Dict[str, Any]]:
         """Update a deck."""
         data = {}
         if name is not None:
             data["name"] = name
-        if description is not None:
-            data["description"] = description
+        if prompt is not None:
+            data["prompt"] = prompt
         
         if not data:
             return self.get_deck(deck_id)
