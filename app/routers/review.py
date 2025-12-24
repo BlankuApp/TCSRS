@@ -3,14 +3,16 @@ Review endpoints for SRS operations.
 """
 import json
 from datetime import datetime
-from typing import Union
+from typing import List, Union
 
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.dependencies.auth import get_current_user, get_jwt_token
 from app.models.schemas import (
+    DeckReviewResponse,
     MultipleChoiceCard,
     QAHintCard,
+    ReviewCardItem,
     ReviewResponse,
     ReviewSubmission,
 )
@@ -56,81 +58,106 @@ def _card_db_to_schema(card_db: dict) -> Union[QAHintCard, MultipleChoiceCard]:
         raise ValueError(f"Unknown card type: {card_type}")
 
 
-@router.get("/topics/{topic_id}/review-card", response_model=Union[QAHintCard, MultipleChoiceCard])
-async def get_review_card(
-    topic_id: str,
+@router.get("/decks/{deck_id}/cards", response_model=DeckReviewResponse)
+async def get_deck_review_cards(
+    deck_id: str,
     current_user: str = Depends(get_current_user),
     jwt_token: str = Depends(get_jwt_token)
 ):
     """
-    Get a single card for review from the topic.
-    Uses stochastic sampling weighted by intrinsic_weight.
-    Returns the full card including answer/correct_index.
+    Get up to 100 due cards for review from a deck.
+    Returns one card per due topic, ordered by most overdue first.
+    All card fields are exposed including answers/correct_index.
     """
     try:
         db = get_user_scoped_client(jwt_token)
         
-        # Verify topic exists and user owns it (RLS will handle this)
-        topic_response = db.table("topics").select("*").eq("id", topic_id).execute()
-        if not topic_response.data:
-            raise HTTPException(status_code=404, detail="Topic not found")
+        # Verify deck exists and user owns it (RLS will handle this)
+        deck_response = db.table("decks").select("*").eq("id", deck_id).execute()
+        if not deck_response.data:
+            raise HTTPException(status_code=404, detail="Deck not found")
         
-        # Get all cards for the topic
-        cards_response = db.table("cards").select("*").eq("topic_id", topic_id).execute()
-        cards = cards_response.data if cards_response.data else []
+        # Get due topics (next_review <= now) ordered by most overdue first
+        now = datetime.utcnow().isoformat()
+        topics_response = (
+            db.table("topics")
+            .select("*")
+            .eq("deck_id", deck_id)
+            .lte("next_review", now)
+            .order("next_review", desc=False)  # Ascending - most overdue first
+            .limit(100)
+            .execute()
+        )
         
-        if not cards:
-            raise HTTPException(status_code=404, detail="No cards found for this topic")
+        due_topics = topics_response.data if topics_response.data else []
         
-        # Sample one card using stochastic weighted sampling
-        selected_card = sample_card(cards)
-        if not selected_card:
-            raise HTTPException(status_code=500, detail="Failed to sample card")
+        if not due_topics:
+            return DeckReviewResponse(
+                cards=[],
+                total_due=0,
+                deck_id=deck_id
+            )
         
-        return _card_db_to_schema(selected_card)
+        # For each topic, sample one card
+        review_cards: List[ReviewCardItem] = []
+        for topic in due_topics:
+            # Get all cards for this topic
+            cards_response = (
+                db.table("cards")
+                .select("*")
+                .eq("topic_id", topic["id"])
+                .execute()
+            )
+            
+            cards = cards_response.data if cards_response.data else []
+            if not cards:
+                continue  # Skip topics with no cards
+            
+            # Sample one card using weighted sampling
+            sampled_card = sample_card(cards)
+            if sampled_card:
+                review_cards.append(_card_db_to_schema(sampled_card))
+        
+        return DeckReviewResponse(
+            cards=review_cards,
+            total_due=len(due_topics),
+            deck_id=deck_id
+        )
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/topics/{topic_id}/submit-review", response_model=ReviewResponse)
-async def submit_review(
-    topic_id: str,
+@router.post("/cards/{card_id}/submit", response_model=ReviewResponse)
+async def submit_card_review(
+    card_id: str,
     review: ReviewSubmission,
     current_user: str = Depends(get_current_user),
     jwt_token: str = Depends(get_jwt_token)
 ):
     """
-    Submit a review for a topic.
-    Updates the topic's SRS parameters (stability, difficulty, next_review).
-    
-    Note: This endpoint updates the topic based on the review, not tied to a specific card.
-    The card reviewed should be retrieved first via GET /review/topics/{topic_id}/review-card.
+    Submit a review for a specific card.
+    Updates the card's parent topic SRS parameters (stability, difficulty, next_review).
     """
     try:
         db = get_user_scoped_client(jwt_token)
         
-        # Verify topic exists and user owns it (RLS will handle this)
+        # Get the card to retrieve topic_id and intrinsic_weight
+        card_response = db.table("cards").select("*").eq("id", card_id).execute()
+        if not card_response.data:
+            raise HTTPException(status_code=404, detail="Card not found")
+        
+        card = card_response.data[0]
+        topic_id = card["topic_id"]
+        intrinsic_weight = card.get("intrinsic_weight", 1.0)
+        
+        # Get the topic to retrieve current SRS parameters
         topic_response = db.table("topics").select("*").eq("id", topic_id).execute()
         if not topic_response.data:
             raise HTTPException(status_code=404, detail="Topic not found")
+        
         topic = topic_response.data[0]
-        
-        # Get cards to determine intrinsic weight of last reviewed card
-        # In a real implementation, you'd track which card was just reviewed
-        # For now, we'll sample again to get a representative weight
-        cards_response = db.table("cards").select("*").eq("topic_id", topic_id).execute()
-        cards = cards_response.data if cards_response.data else []
-        
-        if not cards:
-            raise HTTPException(status_code=404, detail="No cards found for this topic")
-        
-        # Sample card to get intrinsic weight
-        # NOTE: In production, you should pass card_id with the review submission
-        # to know exactly which card was reviewed
-        sampled_card = sample_card(cards)
-        intrinsic_weight = sampled_card.get("intrinsic_weight", 1.0)
         
         # Process the review and get updated SRS parameters
         updates = process_review(
@@ -138,8 +165,7 @@ async def submit_review(
             base_score=review.base_score,
             intrinsic_weight=intrinsic_weight
         )
-        print(updates)
-
+        
         # Supabase client requires JSON-serializable payloads
         db_updates = {
             key: (value.isoformat() if isinstance(value, datetime) else value)
@@ -162,3 +188,4 @@ async def submit_review(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+

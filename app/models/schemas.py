@@ -155,6 +155,17 @@ class ReviewResponse(BaseModel):
     message: str
 
 
+# Union type for review cards (topic_id already included in CardBase)
+ReviewCardItem = Union[QAHintCard, MultipleChoiceCard]
+
+
+class DeckReviewResponse(BaseModel):
+    """Response containing cards to review from a deck."""
+    cards: List[ReviewCardItem] = Field(..., description="List of cards to review (max 100)")
+    total_due: int = Field(..., description="Total number of due topics in the deck")
+    deck_id: str = Field(..., description="ID of the deck being reviewed")
+
+
 class UserProfile(BaseModel):
     """Represents a user profile."""
     user_id: str

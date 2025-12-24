@@ -181,6 +181,18 @@ interface UserProfile {
   updated_at: string | null;
 }
 
+// Review Card Item (includes topic_id for tracking)
+type ReviewCardItem = (QAHintCard | MultipleChoiceCard) & {
+  topic_id: string;              // Already included in base card schema
+};
+
+// Deck Review Response
+interface DeckReviewResponse {
+  cards: ReviewCardItem[];       // List of cards to review (max 100)
+  total_due: number;             // Total number of due topics in deck
+  deck_id: string;               // ID of the deck being reviewed
+}
+
 // Review Submission
 interface ReviewSubmission {
   base_score: 0 | 1 | 2 | 3;     // 0=Again, 1=Hard, 2=Good, 3=Easy
@@ -549,30 +561,38 @@ Delete a card
 
 ### Review
 
-#### `GET /review/topics/{topic_id}/review-card` 🔒
-Get a random weighted card for review
+#### `GET /review/decks/{deck_id}/cards` 🔒
+Get up to 100 due cards for review from a deck
 
 **Path Parameters:**
-- `topic_id` (string, UUID) - Topic ID
+- `deck_id` (string, UUID) - Deck ID
 
-**Response:** `200 OK` → `Card`
+**Response:** `200 OK` → `DeckReviewResponse`
 
-**Algorithm:** Uses stochastic sampling weighted by `intrinsic_weight`. Cards with higher weights are more likely to be selected.
+**Algorithm:** 
+1. Queries topics with `next_review <= NOW()` in the deck
+2. Orders by `next_review` ascending (most overdue first)
+3. Limits to 100 topics
+4. Samples one card per topic using weighted sampling by `intrinsic_weight`
 
 **Errors:**
 - `401` - Unauthorized
-- `404` - Topic not found or no cards available
-- `500` - Sampling failed
+- `404` - Deck not found
+- `500` - Internal error
 
-**Note:** The response includes the full card (including answer/correct_index) for frontend display.
+**Notes:** 
+- All card fields are exposed including `answer`, `hint`, and `correct_index`
+- Frontend is responsible for hiding/showing answers appropriately
+- If 100 cards are reviewed and more remain due, send another request
+- Each card includes `topic_id` for tracking which topic to update on submission
 
 ---
 
-#### `POST /review/topics/{topic_id}/submit-review` 🔒
-Submit review and update SRS parameters
+#### `POST /review/cards/{card_id}/submit` 🔒
+Submit review for a specific card and update its topic
 
 **Path Parameters:**
-- `topic_id` (string, UUID) - Topic ID
+- `card_id` (string, UUID) - Card ID that was reviewed
 
 **Request Body:** `ReviewSubmission`
 
@@ -581,15 +601,18 @@ Submit review and update SRS parameters
 **Errors:**
 - `400` - Validation error
 - `401` - Unauthorized
-- `404` - Topic not found or no cards available
+- `404` - Card or topic not found
+- `500` - Failed to update topic
 
 **SRS Updates:**
-- **Stability**: Memory retention time (2.4 - 8760 hours)
-- **Difficulty**: Topic difficulty (1 - 10)
-- **Next Review**: Scheduled review datetime
-- **Last Reviewed**: Current timestamp
+- Retrieves the card's `intrinsic_weight` and `topic_id`
+- Updates the topic's SRS parameters:
+  - **Stability**: Memory retention time (2.4 - 8760 hours)
+  - **Difficulty**: Topic difficulty (1 - 10)
+  - **Next Review**: Scheduled review datetime
+  - **Last Reviewed**: Current timestamp
 
-**Note:** The system samples a card internally to determine the weight for calculations.
+**Note:** Each card review updates its parent topic's SRS parameters based on the card's intrinsic weight and the user's base score.
 
 ---
 
@@ -785,40 +808,48 @@ selected_card = random.choices(cards, weights=weights, k=1)[0]
 
 ### Review Workflow
 
-**Step-by-step process for implementing reviews:**
+**Step-by-step process for implementing deck-level reviews:**
 
-1. **Get due topics**
+1. **Get due cards from a deck**
    ```typescript
-   GET /topics/due?limit=10
-   // Returns topics ordered by next_review (most overdue first)
+   GET /review/decks/{deck_id}/cards
+   
+   // Returns up to 100 cards (one per due topic), most overdue first
+   {
+     cards: [
+       {
+         id: "card-uuid",
+         topic_id: "topic-uuid",
+         card_type: "qa_hint",
+         question: "What is...?",
+         answer: "It is...",  // Full answer exposed
+         hint: "Think about...",
+         intrinsic_weight: 1.5,
+         ...
+       },
+       // ... more cards
+     ],
+     total_due: 100,
+     deck_id: "deck-uuid"
+   }
    ```
 
-2. **Select a topic to review**
-   ```typescript
-   const topicToReview = dueTopics[0]; // Most overdue
-   ```
-
-3. **Request a review card**
-   ```typescript
-   GET /review/topics/{topic_id}/review-card
-   // Returns a weighted-random card
-   ```
-
-4. **Display card to user**
+2. **Display cards to user one by one**
    - Show the `question` field
-   - For QA cards: Show `hint` if needed, then reveal `answer`
-   - For Multiple Choice: Show `choices`, user selects one
+   - For QA cards: Let user think, optionally show `hint`, then reveal `answer`
+   - For Multiple Choice: Show `choices`, user selects one, then reveal `correct_index`
+   - Frontend manages hiding/showing answers appropriately
 
-5. **User rates their recall**
+3. **User rates their recall**
    - Ask: "How well did you remember this?"
    - Options: Again (0), Hard (1), Good (2), Easy (3)
 
-6. **Submit review**
+4. **Submit review for each card**
    ```typescript
-   POST /review/topics/{topic_id}/submit-review
+   POST /review/cards/{card_id}/submit
    Body: { base_score: 2 }
    
-   // Response includes updated SRS parameters:
+   // Response includes updated SRS parameters for the card's topic:
    {
      topic_id: "...",
      new_stability: 69.6,
@@ -828,11 +859,21 @@ selected_card = random.choices(cards, weights=weights, k=1)[0]
    }
    ```
 
-7. **Show feedback**
+5. **Show feedback**
    - Display next review time
    - Optionally show updated stability/difficulty
+   - Track which cards have been reviewed in the session
 
-8. **Continue with next due topic**
+6. **Continue with remaining cards**
+   - Process all cards from the batch
+   - If all 100 cards are reviewed and `total_due > 100`, send another request to get the next batch
+
+**Notes:**
+- Reviews are done at the **deck level** (not individual topics)
+- Each card review updates its **parent topic's** SRS parameters
+- The card's `intrinsic_weight` amplifies the effect of the review score
+- Frontend tracks which cards have been submitted to avoid duplicate submissions
+- Multiple requests can be made if more than 100 topics are due
 
 ---
 
@@ -1023,20 +1064,17 @@ Body: {
 }
 ```
 
-**Get due topics:**
+**Get due cards for a deck:**
 ```
-GET /topics/due?limit=10
-```
-
-**Start a review:**
-```
-GET /review/topics/{topic_id}/review-card
+GET /review/decks/{deck_id}/cards
+// Returns up to 100 cards from due topics
 ```
 
-**Submit a review:**
+**Submit a card review:**
 ```
-POST /review/topics/{topic_id}/submit-review
+POST /review/cards/{card_id}/submit
 Body: { base_score: 2 }
+// Updates the card's topic SRS parameters
 ```
 
 ---
