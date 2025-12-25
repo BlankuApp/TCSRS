@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from app.dependencies.auth import get_current_user, get_jwt_token
 from app.models.schemas import (
     CardCreate,
+    CardCreateBatch,
     CardItem,
     CardUpdate,
     MultipleChoiceCardCreate,
@@ -219,6 +220,58 @@ async def delete_topic(
 # Card Operations (JSONB Array Manipulation)
 # =====================
 
+def _build_card_item(card: CardCreate, batch_index: int) -> dict:
+    """
+    Build a card item dict from CardCreate schema.
+    
+    Args:
+        card: CardCreate instance (QAHintCardCreate or MultipleChoiceCardCreate)
+        batch_index: Index of card in batch for error context
+        
+    Returns:
+        dict: Card item ready for JSONB storage
+        
+    Raises:
+        HTTPException: If card validation fails
+    """
+    try:
+        # Build card item based on type
+        if isinstance(card, QAHintCardCreate):
+            card_data = {
+                "question": card.question,
+                "answer": card.answer,
+                "hint": card.hint
+            }
+        elif isinstance(card, MultipleChoiceCardCreate):
+            # Validate correct_index bounds
+            if card.correct_index < 0 or card.correct_index >= len(card.choices):
+                raise ValueError(f"correct_index must be between 0 and {len(card.choices) - 1}")
+            
+            card_data = {
+                "question": card.question,
+                "choices": card.choices,
+                "correct_index": card.correct_index
+            }
+        else:
+            raise ValueError("Invalid card type")
+
+        return {
+            "card_type": card.card_type,
+            "intrinsic_weight": card.intrinsic_weight,
+            "card_data": card_data
+        }
+    except ValueError as e:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Card at index {batch_index}: {str(e)}"
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Card at index {batch_index}: Invalid card data - {str(e)}"
+        )
+
+
 @router.post("/{topic_id}/cards", response_model=CardItem, status_code=status.HTTP_201_CREATED)
 async def add_card_to_topic(
     topic_id: str,
@@ -246,27 +299,8 @@ async def add_card_to_topic(
         if len(cards) >= 25:
             raise HTTPException(status_code=400, detail="Topic already has maximum of 25 cards")
 
-        # Build card item based on type
-        if isinstance(card, QAHintCardCreate):
-            card_data = {
-                "question": card.question,
-                "answer": card.answer,
-                "hint": card.hint
-            }
-        elif isinstance(card, MultipleChoiceCardCreate):
-            card_data = {
-                "question": card.question,
-                "choices": card.choices,
-                "correct_index": card.correct_index
-            }
-        else:
-            raise HTTPException(status_code=400, detail="Invalid card type")
-
-        new_card = {
-            "card_type": card.card_type,
-            "intrinsic_weight": card.intrinsic_weight,
-            "card_data": card_data
-        }
+        # Build card using helper
+        new_card = _build_card_item(card, 0)
 
         # Append to cards array
         cards.append(new_card)
@@ -280,6 +314,76 @@ async def add_card_to_topic(
             raise HTTPException(status_code=500, detail="Failed to add card")
 
         return CardItem(**new_card)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/{topic_id}/cards/batch", response_model=Topic, status_code=status.HTTP_201_CREATED)
+async def add_cards_batch_to_topic(
+    topic_id: str,
+    batch: CardCreateBatch,
+    current_user: str = Depends(get_current_user),
+    jwt_token: str = Depends(get_jwt_token)
+):
+    """Add multiple cards to a topic's cards array in batch mode."""
+    try:
+        db = get_user_scoped_client(jwt_token)
+
+        # Fetch the topic
+        response = db.table("topics").select("*").eq("id", topic_id).execute()
+        if not response.data:
+            raise HTTPException(status_code=404, detail="Topic not found")
+
+        topic = response.data[0]
+        cards = topic.get('cards', [])
+
+        # Parse JSONB if string
+        if isinstance(cards, str):
+            cards = json.loads(cards)
+
+        # Determine starting cards based on mode
+        if batch.mode == "replace":
+            cards = []
+            # Validate limit for replace mode
+            if len(batch.cards) > 25:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Cannot add {len(batch.cards)} cards. Maximum 25 cards per topic."
+                )
+        else:  # append mode
+            # Validate limit for append mode
+            total_cards = len(cards) + len(batch.cards)
+            if total_cards > 25:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Cannot add {len(batch.cards)} cards. Topic has {len(cards)} cards, would exceed limit of 25 (total would be {total_cards})."
+                )
+
+        # Build all cards using helper with index tracking
+        new_cards = []
+        for idx, card in enumerate(batch.cards):
+            new_card = _build_card_item(card, idx)
+            new_cards.append(new_card)
+
+        # Append all new cards to array
+        cards.extend(new_cards)
+
+        # Update topic with new cards array
+        update_result = db.table("topics").update({
+            "cards": json.dumps(cards)
+        }).eq("id", topic_id).execute()
+
+        if not update_result.data:
+            raise HTTPException(status_code=500, detail="Failed to add cards")
+
+        # Parse cards from response
+        updated_topic = update_result.data[0]
+        if isinstance(updated_topic.get('cards'), str):
+            updated_topic['cards'] = json.loads(updated_topic['cards'])
+
+        return updated_topic
     except HTTPException:
         raise
     except Exception as e:

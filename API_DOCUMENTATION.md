@@ -535,6 +535,139 @@ Body: {
 
 ---
 
+#### `POST /topics/{topic_id}/cards/batch` 🔒
+Add multiple cards to a topic's cards array in batch mode
+
+**Path Parameters:**
+- `topic_id` (string, UUID) - Topic ID
+
+**Request Body:** `CardCreateBatch`
+
+```typescript
+interface CardCreateBatch {
+  cards: (CreateQAHintCardRequest | CreateMultipleChoiceCardRequest)[];  // 1-25 cards
+  mode?: 'append' | 'replace';  // Default: 'append'
+}
+```
+
+**Response:** `201 Created` → `Topic` (with updated cards array)
+
+**Errors:**
+- `400` - Validation error (card validation failed, would exceed 25 card limit, or invalid card data with index context)
+- `401` - Unauthorized
+- `404` - Topic not found
+
+**Behavior:**
+- **Append mode** (default): Adds cards to existing cards array
+  - Validates: `existing_cards + new_cards <= 25`
+  - Error example: "Cannot add 5 cards. Topic has 22 cards, would exceed limit of 25 (total would be 27)."
+- **Replace mode**: Clears existing cards and adds new ones
+  - Validates: `new_cards <= 25`
+  - Error example: "Cannot add 30 cards. Maximum 25 cards per topic."
+- **All-or-nothing**: If any card fails validation, the entire batch is rejected
+- **Error context**: Validation errors include card index, e.g., "Card at index 2: correct_index must be between 0 and 2"
+
+**Example Request (Append Mode - Mixed Card Types):**
+```typescript
+POST /topics/abc-123/cards/batch
+Body: {
+  mode: "append",
+  cards: [
+    {
+      card_type: "qa_hint",
+      question: "What is the capital of France?",
+      answer: "Paris",
+      hint: "City of lights",
+      intrinsic_weight: 1.5
+    },
+    {
+      card_type: "multiple_choice",
+      question: "Which is a programming language?",
+      choices: ["Python", "HTML", "CSS"],
+      correct_index: 0,
+      intrinsic_weight: 1.0
+    },
+    {
+      card_type: "qa_hint",
+      question: "What is 2+2?",
+      answer: "4",
+      intrinsic_weight: 0.5
+    }
+  ]
+}
+```
+
+**Example Request (Replace Mode):**
+```typescript
+POST /topics/abc-123/cards/batch
+Body: {
+  mode: "replace",
+  cards: [
+    {
+      card_type: "qa_hint",
+      question: "New question 1?",
+      answer: "New answer 1"
+    },
+    {
+      card_type: "qa_hint",
+      question: "New question 2?",
+      answer: "New answer 2"
+    }
+  ]
+}
+```
+
+**Example Response:**
+```typescript
+{
+  id: "topic-uuid",
+  deck_id: "deck-uuid",
+  name: "Topic Name",
+  stability: 24.0,
+  difficulty: 5.0,
+  next_review: "2025-12-26T10:00:00Z",
+  last_reviewed: null,
+  cards: [
+    // All cards in the topic (existing + new in append mode, or only new in replace mode)
+    {
+      card_type: "qa_hint",
+      intrinsic_weight: 1.5,
+      card_data: {
+        question: "What is the capital of France?",
+        answer: "Paris",
+        hint: "City of lights"
+      }
+    }
+    // ... more cards
+  ],
+  created_at: "2025-12-25T10:00:00Z",
+  updated_at: "2025-12-25T10:30:00Z"
+}
+```
+
+**Example Error Response (Card Validation):**
+```typescript
+{
+  detail: "Card at index 2: correct_index must be between 0 and 2"
+}
+```
+
+**Example Error Response (Card Limit):**
+```typescript
+{
+  detail: "Cannot add 5 cards. Topic has 22 cards, would exceed limit of 25 (total would be 27)."
+}
+```
+
+**Notes:**
+- Maximum 25 cards per batch request
+- All text fields support Markdown formatting
+- Returns the full updated topic with all cards
+- Frontend should confirm with user before using replace mode to prevent accidental data loss
+- Use this endpoint for efficient bulk card creation (e.g., importing flashcards, AI-generated cards)
+
+---
+
 #### `GET /topics/{topic_id}/cards` 🔒
 Get all cards from a topic's cards array
 
@@ -1273,6 +1406,19 @@ Body: {
   correct_index: 1,
   intrinsic_weight: 1.0
 }
+```
+
+**Add cards in batch:**
+```
+POST /topics/{topic_id}/cards/batch
+Body: {
+  mode: "append",  // or "replace"
+  cards: [
+    { card_type: "qa_hint", question: "Q1?", answer: "A1" },
+    { card_type: "multiple_choice", question: "Q2?", choices: ["A", "B"], correct_index: 0 }
+  ]
+}
+// Returns full Topic with all cards
 ```
 
 **Get all cards in a topic:**

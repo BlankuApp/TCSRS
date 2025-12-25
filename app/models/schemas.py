@@ -173,6 +173,12 @@ class CardUpdate(BaseModel):
     intrinsic_weight: float = Field(..., ge=0.5, le=2.0)
 
 
+class CardCreateBatch(BaseModel):
+    """Schema for batch adding cards to a topic."""
+    cards: List[CardCreate] = Field(..., min_items=1, max_items=25, description="List of cards to add (1-25)")
+    mode: Literal["append", "replace"] = Field(default="append", description="append: add to existing cards, replace: clear and add new cards")
+
+
 # =====================
 # Review Models
 # =====================
