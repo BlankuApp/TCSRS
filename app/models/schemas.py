@@ -132,6 +132,17 @@ class TopicUpdate(BaseModel):
         return v
 
 
+class TopicListResponse(BaseModel):
+    """Paginated response for topics list."""
+    items: List[Topic] = Field(..., description="List of topics on current page")
+    total: int = Field(..., description="Total number of topics in the deck")
+    page: int = Field(..., description="Current page number (1-based)")
+    page_size: int = Field(..., description="Number of items per page")
+    total_pages: int = Field(..., description="Total number of pages")
+    has_next: bool = Field(..., description="Whether there is a next page")
+    has_prev: bool = Field(..., description="Whether there is a previous page")
+
+
 # =====================
 # Card Create Schemas (for adding cards to topics)
 # =====================

@@ -3,9 +3,9 @@ Topic management endpoints with embedded cards operations.
 """
 import json
 from datetime import datetime
-from typing import List
+from typing import List, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.dependencies.auth import get_current_user, get_jwt_token
 from app.models.schemas import (
@@ -17,6 +17,7 @@ from app.models.schemas import (
     QAHintCardCreate,
     Topic,
     TopicCreate,
+    TopicListResponse,
     TopicUpdate,
 )
 from app.services.database import get_user_scoped_client
@@ -66,13 +67,17 @@ async def create_topic(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/deck/{deck_id}", response_model=List[Topic])
+@router.get("/deck/{deck_id}", response_model=TopicListResponse)
 async def get_topics_by_deck(
     deck_id: str,
+    page: int = Query(default=1, ge=1, description="Page number (1-based)"),
+    page_size: int = Query(default=25, ge=1, le=100, description="Number of items per page"),
+    sort_by: Literal["name", "difficulty", "stability", "next_review", "last_reviewed", "created_at", "updated_at"] = Query(default="name", description="Field to sort by"),
+    sort_order: Literal["asc", "desc"] = Query(default="asc", description="Sort direction"),
     current_user: str = Depends(get_current_user),
     jwt_token: str = Depends(get_jwt_token)
 ):
-    """Get all topics in a deck with their cards."""
+    """Get topics in a deck with pagination and sorting."""
     try:
         db = get_user_scoped_client(jwt_token)
 
@@ -81,7 +86,19 @@ async def get_topics_by_deck(
         if not deck_response.data:
             raise HTTPException(status_code=404, detail="Deck not found")
 
-        response = db.table("topics").select("*").eq("deck_id", deck_id).execute()
+        # Get total count
+        count_response = db.table("topics").select("*", count="exact").eq("deck_id", deck_id).execute()
+        total = count_response.count if count_response.count is not None else 0
+
+        # Calculate pagination
+        start = (page - 1) * page_size
+        end = start + page_size - 1
+
+        # Query with sorting and pagination
+        query = db.table("topics").select("*").eq("deck_id", deck_id)
+        query = query.order(sort_by, desc=(sort_order == "desc"))
+        query = query.range(start, end)
+        response = query.execute()
 
         if response.data:
             # Parse cards JSONB for each topic
@@ -89,7 +106,18 @@ async def get_topics_by_deck(
                 if isinstance(topic.get('cards'), str):
                     topic['cards'] = json.loads(topic['cards'])
 
-        return response.data if response.data else []
+        # Calculate pagination metadata
+        total_pages = (total + page_size - 1) // page_size if total > 0 else 1
+        
+        return {
+            "items": response.data if response.data else [],
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "total_pages": total_pages,
+            "has_next": page < total_pages,
+            "has_prev": page > 1
+        }
     except HTTPException:
         raise
     except Exception as e:

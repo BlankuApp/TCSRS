@@ -168,6 +168,17 @@ interface Topic {
   updated_at: string | null;
 }
 
+// Topic List Response (Paginated)
+interface TopicListResponse {
+  items: Topic[];                // Topics on current page
+  total: number;                 // Total number of topics in deck
+  page: number;                  // Current page number (1-based)
+  page_size: number;             // Items per page
+  total_pages: number;           // Total number of pages
+  has_next: boolean;             // Whether there is a next page
+  has_prev: boolean;             // Whether there is a previous page
+}
+
 // User Profile
 interface UserProfile {
   user_id: string;               // UUID
@@ -414,16 +425,99 @@ Create a new topic
 ---
 
 #### `GET /topics/deck/{deck_id}` 🔒
-Get all topics in a deck
+Get topics in a deck with pagination and sorting
 
 **Path Parameters:**
 - `deck_id` (string, UUID) - Deck ID
 
-**Response:** `200 OK` → `Topic[]`
+**Query Parameters:**
+
+| Parameter | Type | Default | Required | Description |
+|-----------|------|---------|----------|-------------|
+| `page` | integer | 1 | No | Page number (1-based, minimum: 1) |
+| `page_size` | integer | 25 | No | Items per page (minimum: 1, maximum: 100) |
+| `sort_by` | string | `"name"` | No | Field to sort by (see sortable fields below) |
+| `sort_order` | string | `"asc"` | No | Sort direction: `"asc"` or `"desc"` |
+
+**Sortable Fields:**
+
+| Field | Description | Data Type |
+|-------|-------------|----------|
+| `name` | Topic name (alphabetical) | string |
+| `difficulty` | Topic difficulty level | number (1-10) |
+| `stability` | Memory stability | number (hours) |
+| `next_review` | Next scheduled review date | datetime |
+| `last_reviewed` | Last review date | datetime (nullable) |
+| `created_at` | Topic creation date | datetime |
+| `updated_at` | Last update date | datetime |
+
+**Response:** `200 OK` → `TopicListResponse`
 
 **Errors:**
 - `401` - Unauthorized
 - `404` - Deck not found
+- `422` - Invalid query parameters
+
+**Breaking Change Notice (v2.0):**  
+This endpoint previously returned `Topic[]`. It now returns `TopicListResponse` with pagination metadata. Frontend code must be updated:
+
+```typescript
+// OLD (before v2.0):
+const topics = await response.json(); // Topic[]
+
+// NEW (v2.0+):
+const data = await response.json(); // TopicListResponse
+const topics = data.items;          // Topic[]
+const totalPages = data.total_pages;
+const hasMore = data.has_next;
+```
+
+**Example Requests:**
+
+```typescript
+// Get first page (default: 25 topics, sorted by name ascending)
+GET /topics/deck/abc-123?page=1
+
+// Get second page with 50 topics per page
+GET /topics/deck/abc-123?page=2&page_size=50
+
+// Sort by difficulty (hardest first)
+GET /topics/deck/abc-123?sort_by=difficulty&sort_order=desc
+
+// Sort by next review date (most overdue first)
+GET /topics/deck/abc-123?sort_by=next_review&sort_order=asc
+
+// Get page 3, sorted by stability (longest intervals first)
+GET /topics/deck/abc-123?page=3&page_size=25&sort_by=stability&sort_order=desc
+```
+
+**Example Response:**
+
+```typescript
+{
+  items: [
+    {
+      id: "topic-uuid-1",
+      deck_id: "deck-uuid",
+      name: "Topic A",
+      stability: 48.5,
+      difficulty: 4.2,
+      next_review: "2025-12-28T10:00:00Z",
+      last_reviewed: "2025-12-26T10:00:00Z",
+      cards: [ /* ... */ ],
+      created_at: "2025-12-20T10:00:00Z",
+      updated_at: "2025-12-26T10:00:00Z"
+    },
+    // ... more topics (up to page_size)
+  ],
+  total: 127,           // Total topics in deck
+  page: 1,              // Current page
+  page_size: 25,        // Items per page
+  total_pages: 6,       // Ceiling(127 / 25) = 6 pages
+  has_next: true,       // More pages available
+  has_prev: false       // No previous page (page 1)
+}
+```
 
 ---
 
@@ -1437,6 +1531,18 @@ Body: { intrinsic_weight: 2.0 }
 ```
 DELETE /topics/{topic_id}/cards/{index}
 // Returns updated topic with card removed
+```
+
+**Get topics in a deck (paginated):**
+```
+GET /topics/deck/{deck_id}
+// Default: page 1, 25 items, sorted by name ascending
+// Returns TopicListResponse with items, total, page, page_size, total_pages, has_next, has_prev
+
+// Examples:
+GET /topics/deck/{deck_id}?page=2&page_size=50
+GET /topics/deck/{deck_id}?sort_by=difficulty&sort_order=desc
+GET /topics/deck/{deck_id}?sort_by=next_review&sort_order=asc&page=1&page_size=25
 ```
 
 **Get due cards for a deck:**
