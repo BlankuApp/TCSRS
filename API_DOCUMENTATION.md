@@ -894,6 +894,70 @@ Get up to 100 due cards for review from a deck
 
 ---
 
+#### `GET /review/decks/{deck_id}/practice` 🔒
+Get up to 100 random cards from a deck for practice
+
+**Path Parameters:**
+- `deck_id` (string, UUID) - Deck ID
+
+**Response:** `200 OK` → `DeckReviewResponse`
+
+**Algorithm:** 
+1. Queries all topics in the deck (no date filtering)
+2. Randomly shuffles topics
+3. Takes up to 100 topics (or all if fewer)
+4. Samples one card per topic using weighted sampling by `intrinsic_weight`
+5. Returns cards with `topic_id` and `card_index`
+
+**Errors:**
+- `401` - Unauthorized
+- `404` - Deck not found
+- `500` - Internal error
+
+**Notes:** 
+- Returns random cards regardless of SRS scheduling (for practice, not review)
+- Does not filter by `next_review` date - includes all topics
+- Random order (not ordered by due date)
+- All card data is exposed including answers, hints, and correct_index
+- Frontend is responsible for hiding/showing answers appropriately
+- Returns as many cards as available (up to 100)
+- Does **not** affect SRS parameters or scheduling
+
+**Example Response:**
+```typescript
+{
+  cards: [
+    {
+      topic_id: "topic-uuid-3",
+      card_index: 1,
+      card_type: "multiple_choice",
+      intrinsic_weight: 1.0,
+      card_data: {
+        question: "Which one...?",
+        choices: ["Option A", "Option B", "Option C"],
+        correct_index: 2
+      }
+    },
+    {
+      topic_id: "topic-uuid-7",
+      card_index: 0,
+      card_type: "qa_hint",
+      intrinsic_weight: 1.5,
+      card_data: {
+        question: "What is...?",
+        answer: "It is...",
+        hint: "Think about..."
+      }
+    }
+    // ... more cards in random order
+  ],
+  total_due: 45,  // Number of cards returned
+  deck_id: "deck-uuid"
+}
+```
+
+---
+
 #### `POST /review/topics/{topic_id}/cards/{index}/submit` 🔒
 Submit review for a specific card and update its parent topic
 
@@ -1551,6 +1615,13 @@ GET /review/decks/{deck_id}/cards
 // Returns up to 100 cards from due topics with topic_id and card_index
 ```
 
+**Get random practice cards from a deck:**
+```
+GET /review/decks/{deck_id}/practice
+// Returns up to 100 random cards for practice (no date filtering, random order)
+// Does not affect SRS scheduling
+```
+
 **Submit a card review:**
 ```
 POST /review/topics/{topic_id}/cards/{index}/submit
@@ -1560,4 +1631,4 @@ Body: { base_score: 2 }
 
 ---
 
-**Last Updated:** December 24, 2025
+**Last Updated:** December 27, 2025

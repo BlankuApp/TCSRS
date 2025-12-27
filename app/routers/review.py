@@ -2,6 +2,7 @@
 Review endpoints for SRS operations.
 """
 import json
+import random
 from datetime import datetime
 from typing import List
 
@@ -89,6 +90,84 @@ async def get_deck_review_cards(
         return DeckReviewResponse(
             cards=review_cards,
             total_due=len(due_topics),
+            deck_id=deck_id
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/decks/{deck_id}/practice", response_model=DeckReviewResponse)
+async def get_deck_practice_cards(
+    deck_id: str,
+    current_user: str = Depends(get_current_user),
+    jwt_token: str = Depends(get_jwt_token)
+):
+    """
+    Get up to 100 random cards from a deck for practice purposes.
+    Returns one card per topic (with card_index), in random order.
+    All card fields are exposed including answers/correct_index.
+    This endpoint is for practice only and does not affect SRS scheduling.
+    """
+    try:
+        db = get_user_scoped_client(jwt_token)
+
+        # Verify deck exists and user owns it (RLS will handle this)
+        deck_response = db.table("decks").select("*").eq("id", deck_id).execute()
+        if not deck_response.data:
+            raise HTTPException(status_code=404, detail="Deck not found")
+
+        # Get all topics from the deck (no date filtering)
+        topics_response = (
+            db.table("topics")
+            .select("*")
+            .eq("deck_id", deck_id)
+            .execute()
+        )
+
+        all_topics = topics_response.data if topics_response.data else []
+
+        if not all_topics:
+            return DeckReviewResponse(
+                cards=[],
+                total_due=0,
+                deck_id=deck_id
+            )
+
+        # Shuffle topics randomly and take up to 100
+        random.shuffle(all_topics)
+        selected_topics = all_topics[:100]
+
+        # For each topic, sample one card from its cards array
+        practice_cards: List[ReviewCardItem] = []
+        for topic in selected_topics:
+            cards = topic.get('cards', [])
+
+            # Parse JSONB if string
+            if isinstance(cards, str):
+                cards = json.loads(cards)
+
+            if not cards:
+                continue  # Skip topics with no cards
+
+            # Sample one card using weighted sampling
+            sampled_card_dict = sample_card(cards)
+            if sampled_card_dict:
+                # Find the index of the sampled card
+                card_index = cards.index(sampled_card_dict)
+
+                practice_cards.append(ReviewCardItem(
+                    card_index=card_index,
+                    topic_id=topic["id"],
+                    card_type=sampled_card_dict["card_type"],
+                    intrinsic_weight=sampled_card_dict["intrinsic_weight"],
+                    card_data=sampled_card_dict["card_data"]
+                ))
+
+        return DeckReviewResponse(
+            cards=practice_cards,
+            total_due=len(practice_cards),
             deck_id=deck_id
         )
     except HTTPException:
