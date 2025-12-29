@@ -152,6 +152,7 @@ interface MultipleChoiceData {
   question: string;              // Markdown supported
   choices: string[];             // Min 2 items, Markdown supported
   correct_index: number;         // 0-based index
+  explanation: string;           // Default: '', shown after user answers, Markdown supported
 }
 
 // Topic with embedded cards
@@ -267,6 +268,7 @@ interface CreateMultipleChoiceCardRequest {
   question: string;              // Required, min 1 char
   choices: string[];             // Required, min 2 items
   correct_index: number;         // Required, >= 0
+  explanation?: string;          // Default: '', shown after user answers
   intrinsic_weight?: number;     // Default: 1.0, range: 0.5-2.0
 }
 
@@ -281,6 +283,7 @@ interface UpdateCardRequest {
   hint?: string;                 // QA cards only
   choices?: string[];            // Min 2 items (Multiple Choice only)
   correct_index?: number;        // >= 0 (Multiple Choice only)
+  explanation?: string;          // Multiple Choice only
 }
 
 // Create Profile
@@ -623,6 +626,7 @@ Body: {
   question: "Which is a programming language?",
   choices: ["Python", "HTML", "CSS"],
   correct_index: 0,
+  explanation: "Python is a programming language. HTML and CSS are markup/styling languages.",
   intrinsic_weight: 1.0
 }
 ```
@@ -679,6 +683,7 @@ Body: {
       question: "Which is a programming language?",
       choices: ["Python", "HTML", "CSS"],
       correct_index: 0,
+      explanation: "Python is a programming language, while HTML and CSS are not.",
       intrinsic_weight: 1.0
     },
     {
@@ -883,7 +888,8 @@ Get up to 100 due cards for review from a deck
       card_data: {
         question: "Which one...?",
         choices: ["Option A", "Option B", "Option C"],
-        correct_index: 1
+        correct_index: 1,
+        explanation: "Option B is correct because..."
       }
     }
   ],
@@ -935,7 +941,8 @@ Get up to 100 random cards from a deck for practice
       card_data: {
         question: "Which one...?",
         choices: ["Option A", "Option B", "Option C"],
-        correct_index: 2
+        correct_index: 2,
+        explanation: "Option C is correct because..."
       }
     },
     {
@@ -1226,7 +1233,8 @@ selected_card = random.choices(cards, weights=weights, k=1)[0]
          card_data: {
            question: "Which one...?",
            choices: ["A", "B", "C"],
-           correct_index: 1
+           correct_index: 1,
+           explanation: "B is the correct answer."
          }
        }
        // ... more cards
@@ -1239,7 +1247,7 @@ selected_card = random.choices(cards, weights=weights, k=1)[0]
 2. **Display cards to user one by one**
    - Show the `card_data.question` field
    - For QA cards: Let user think, optionally show `card_data.hint`, then reveal `card_data.answer`
-   - For Multiple Choice: Show `card_data.choices`, user selects one, then reveal `card_data.correct_index`
+   - For Multiple Choice: Show `card_data.choices`, user selects one, then reveal `card_data.correct_index` and `card_data.explanation`
    - Frontend manages hiding/showing answers appropriately
 
 3. **User rates their recall**
@@ -1518,6 +1526,7 @@ The API uses **Supabase Row-Level Security** for access control:
 - `hint`: Optional, default: '' (QA cards)
 - `choices`: Minimum 2 items, required (Multiple Choice)
 - `correct_index`: >= 0, must be valid index into choices array
+- `explanation`: Optional, default: '', shown after user answers (Multiple Choice only)
 - `intrinsic_weight`: 0.5-2.0, default: 1.0
 
 **Profile:**
@@ -1562,6 +1571,7 @@ Body: {
   question: "Which one...?",
   choices: ["Option A", "Option B", "Option C"],
   correct_index: 1,
+  explanation: "Option B is correct because...",
   intrinsic_weight: 1.0
 }
 ```

@@ -278,7 +278,8 @@ def _build_card_item(card: CardCreate, batch_index: int) -> dict:
             card_data = {
                 "question": card.question,
                 "choices": card.choices,
-                "correct_index": card.correct_index
+                "correct_index": card.correct_index,
+                "explanation": card.explanation
             }
         else:
             raise ValueError("Invalid card type")
@@ -453,7 +454,7 @@ async def update_card_in_topic(
     current_user: str = Depends(get_current_user),
     jwt_token: str = Depends(get_jwt_token)
 ):
-    """Update a card's intrinsic weight at a specific index."""
+    """Update a card's properties at a specific index."""
     try:
         db = get_user_scoped_client(jwt_token)
 
@@ -473,8 +474,43 @@ async def update_card_in_topic(
         if index < 0 or index >= len(cards):
             raise HTTPException(status_code=404, detail=f"Card at index {index} not found")
 
-        # Update intrinsic weight
-        cards[index]['intrinsic_weight'] = card_update.intrinsic_weight
+        card = cards[index]
+        card_type = card.get('card_type')
+        card_data = card.get('card_data', {})
+
+        # Update intrinsic weight if provided
+        if card_update.intrinsic_weight is not None:
+            card['intrinsic_weight'] = card_update.intrinsic_weight
+
+        # Update question if provided (applies to both card types)
+        if card_update.question is not None:
+            card_data['question'] = card_update.question
+
+        # Update QA-specific fields
+        if card_type == 'qa_hint':
+            if card_update.answer is not None:
+                card_data['answer'] = card_update.answer
+            if card_update.hint is not None:
+                card_data['hint'] = card_update.hint
+
+        # Update Multiple Choice-specific fields
+        if card_type == 'multiple_choice':
+            if card_update.choices is not None:
+                card_data['choices'] = card_update.choices
+            if card_update.correct_index is not None:
+                # Validate correct_index bounds
+                choices = card_update.choices if card_update.choices is not None else card_data.get('choices', [])
+                if card_update.correct_index < 0 or card_update.correct_index >= len(choices):
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"correct_index must be between 0 and {len(choices) - 1}"
+                    )
+                card_data['correct_index'] = card_update.correct_index
+            if card_update.explanation is not None:
+                card_data['explanation'] = card_update.explanation
+
+        card['card_data'] = card_data
+        cards[index] = card
 
         # Update topic with modified cards array
         update_result = db.table("topics").update({

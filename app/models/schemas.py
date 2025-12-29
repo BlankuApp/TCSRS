@@ -61,6 +61,7 @@ class MultipleChoiceCardData(BaseModel):
     question: str = Field(..., min_length=1, description="Question text (Markdown supported)")
     choices: List[str] = Field(..., min_items=2, description="List of answer choices (Markdown supported)")
     correct_index: int = Field(..., ge=0, description="Index of the correct answer (0-based)")
+    explanation: str = Field(default="", description="Explanation for the correct answer, shown after user answers (Markdown supported)")
 
     @field_validator('correct_index')
     @classmethod
@@ -163,6 +164,7 @@ class MultipleChoiceCardCreate(BaseModel):
     question: str = Field(..., min_length=1)
     choices: List[str] = Field(..., min_items=2)
     correct_index: int = Field(..., ge=0)
+    explanation: str = Field(default="", description="Explanation for the correct answer (Markdown supported)")
     intrinsic_weight: float = Field(default=1.0, ge=0.5, le=2.0)
 
     @field_validator('correct_index')
@@ -180,8 +182,14 @@ CardCreate = Union[QAHintCardCreate, MultipleChoiceCardCreate]
 
 
 class CardUpdate(BaseModel):
-    """Schema for updating a card's intrinsic weight."""
-    intrinsic_weight: float = Field(..., ge=0.5, le=2.0)
+    """Schema for updating a card's properties."""
+    intrinsic_weight: Optional[float] = Field(None, ge=0.5, le=2.0)
+    question: Optional[str] = Field(None, min_length=1)
+    answer: Optional[str] = Field(None, min_length=1, description="QA cards only")
+    hint: Optional[str] = Field(None, description="QA cards only")
+    choices: Optional[List[str]] = Field(None, min_items=2, description="Multiple Choice only")
+    correct_index: Optional[int] = Field(None, ge=0, description="Multiple Choice only")
+    explanation: Optional[str] = Field(None, description="Multiple Choice only")
 
 
 class CardCreateBatch(BaseModel):
