@@ -242,7 +242,7 @@ class UserProfile(BaseModel):
     user_id: str
     username: str
     avatar: Optional[str] = None
-    role: str = Field(default="user", description="User role: 'user' or 'admin'")
+    role: str = Field(default="user", description="User role: 'user', 'pro', or 'admin'")
     ai_prompts: dict = Field(default_factory=dict, description="Custom AI prompts dictionary")
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
@@ -294,3 +294,55 @@ class UserProfileUpdate(BaseModel):
             if not (v.startswith('http://') or v.startswith('https://')):
                 raise ValueError("Avatar must be a valid HTTP/HTTPS URL")
         return v
+
+
+# =====================
+# AI Generation Models
+# =====================
+
+AIProviderType = Literal["openai", "google", "xai", "anthropic"]
+
+
+class AIModel(BaseModel):
+    """Represents an AI model."""
+    id: str = Field(..., description="Model identifier")
+    name: str = Field(..., description="Display name for the model")
+
+
+class AIProviderInfo(BaseModel):
+    """Information about an AI provider."""
+    id: str = Field(..., description="Provider identifier")
+    display_name: str = Field(..., description="Display name for the provider")
+    models: List[AIModel] = Field(..., description="Available models for this provider")
+
+
+class AIProvidersResponse(BaseModel):
+    """Response containing all available AI providers."""
+    providers: List[AIProviderInfo] = Field(..., description="List of available AI providers")
+    default_provider: str = Field(..., description="Default provider ID")
+    default_model: str = Field(..., description="Default model ID")
+
+
+class GenerateCardsRequest(BaseModel):
+    """Request to generate flashcards using AI."""
+    deck_prompt: str = Field(..., min_length=1, description="The deck's prompt/instructions for card generation")
+    topic_name: str = Field(..., min_length=1, description="The topic name to generate cards for")
+    provider: AIProviderType = Field(..., description="AI provider to use")
+    model: str = Field(..., min_length=1, description="Model ID to use")
+    api_key: str = Field(default="", description="API key for the provider. If empty and user is pro/admin, uses server-side key")
+
+
+class GeneratedCard(BaseModel):
+    """A single generated card from AI."""
+    card_type: Literal["qa_hint", "multiple_choice"]
+    question: str = Field(..., description="Question text (Markdown supported)")
+    answer: Optional[str] = Field(None, description="Answer for qa_hint cards (Markdown supported)")
+    hint: Optional[str] = Field(default="", description="Hint for qa_hint cards (Markdown supported)")
+    choices: Optional[List[str]] = Field(None, description="Choices for multiple_choice cards")
+    correct_index: Optional[int] = Field(None, description="Correct answer index for multiple_choice cards")
+    explanation: Optional[str] = Field(default="", description="Explanation for multiple_choice cards (Markdown supported)")
+
+
+class GenerateCardsResponse(BaseModel):
+    """Response containing generated cards."""
+    cards: List[GeneratedCard] = Field(..., description="List of generated cards")
