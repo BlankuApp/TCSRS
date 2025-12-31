@@ -11,8 +11,18 @@ MIN_STABILITY = 2.4  # hours
 MAX_STABILITY = 8760.0  # 365 days in hours
 MIN_DIFFICULTY = 1.0
 MAX_DIFFICULTY = 10.0
+MIN_INTRINSIC_WEIGHT = 0.5
+MAX_INTRINSIC_WEIGHT = 2.0
 EXPECTED_SCORE = 2.0  # "Good" rating
 DIFFICULTY_RATE = 0.3
+
+# Weight multipliers: cards rated "Again" become more important, "Easy" less important
+WEIGHT_MULTIPLIERS = {
+    0: 1.05,  # Again - increase weight (card needs more attention)
+    1: 1.01,  # Hard - slight increase
+    2: 0.99,  # Good - slight decrease
+    3: 0.95,  # Easy - decrease weight (card is well-learned)
+}
 
 
 def update_stability(current_stability: float, base_score: int, intrinsic_weight: float) -> float:
@@ -69,6 +79,33 @@ def update_difficulty(current_difficulty: float, base_score: int, intrinsic_weig
     # Apply bounds
     new_difficulty = max(MIN_DIFFICULTY, min(MAX_DIFFICULTY, new_difficulty))
     return new_difficulty
+
+
+def update_intrinsic_weight(current_weight: float, base_score: int) -> float:
+    """
+    Update intrinsic weight based on review performance.
+    
+    Cards rated "Again" increase in weight (more important, need more attention).
+    Cards rated "Easy" decrease in weight (less important, well-learned).
+    
+    Args:
+        current_weight: Current intrinsic weight (0.5-2.0)
+        base_score: Base score (0=Again, 1=Hard, 2=Good, 3=Easy)
+    
+    Returns:
+        New intrinsic weight (bounded by MIN_INTRINSIC_WEIGHT and MAX_INTRINSIC_WEIGHT)
+    
+    Algorithm:
+        multiplier = WEIGHT_MULTIPLIERS[base_score]
+        W_new = W_current × multiplier
+        # Apply bounds: [0.5, 2.0]
+    """
+    multiplier = WEIGHT_MULTIPLIERS.get(base_score, 1.0)
+    new_weight = current_weight * multiplier
+    
+    # Apply bounds
+    new_weight = max(MIN_INTRINSIC_WEIGHT, min(MAX_INTRINSIC_WEIGHT, new_weight))
+    return new_weight
 
 
 def calculate_next_review(stability: float, difficulty: float, current_time: Optional[datetime] = None) -> datetime:
@@ -143,7 +180,8 @@ def process_review(
             'stability': float,
             'difficulty': float,
             'next_review': datetime,
-            'last_reviewed': datetime
+            'last_reviewed': datetime,
+            'new_intrinsic_weight': float
         }
     """
     if current_time is None:
@@ -156,6 +194,9 @@ def process_review(
     new_stability = update_stability(current_stability, base_score, intrinsic_weight)
     new_difficulty = update_difficulty(current_difficulty, base_score, intrinsic_weight)
     
+    # Update intrinsic weight based on performance
+    new_intrinsic_weight = update_intrinsic_weight(intrinsic_weight, base_score)
+    
     # Calculate next review time
     next_review = calculate_next_review(new_stability, new_difficulty, current_time)
     
@@ -163,7 +204,8 @@ def process_review(
         'stability': new_stability,
         'difficulty': new_difficulty,
         'next_review': next_review,
-        'last_reviewed': current_time
+        'last_reviewed': current_time,
+        'new_intrinsic_weight': new_intrinsic_weight
     }
 
 

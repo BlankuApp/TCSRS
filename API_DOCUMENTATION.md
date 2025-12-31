@@ -1109,10 +1109,11 @@ Topic difficulty rating
 - Affects interval calculation
 
 #### Intrinsic Weight (W)
-Card importance multiplier
+Card importance multiplier (dynamically updated after each review)
 - **Range:** 0.5 to 2.0
 - **Default:** 1.0
 - Amplifies review performance impact
+- **Updated based on performance:** Cards rated "Again" increase in weight (need more attention), cards rated "Easy" decrease (well-learned)
 
 #### Base Score (B)
 Review rating from user
@@ -1165,6 +1166,41 @@ D_new = D_current - difficulty_delta
 - Effective score: 3 × 1.0 = 3.0
 - Difficulty delta: (3.0 - 2.0) × 0.3 = 0.3
 - **New difficulty: 5.0 - 0.3 = 4.7** (easier)
+
+---
+
+### Intrinsic Weight Update Formula
+
+The card's `intrinsic_weight` is dynamically updated after each review based on performance. Cards that are difficult to remember become more important (higher weight), while well-learned cards become less important (lower weight).
+
+```
+WEIGHT_MULTIPLIERS = {
+    0: 1.05,  # Again - increase weight (card needs more attention)
+    1: 1.01,  # Hard - slight increase
+    2: 0.99,  # Good - slight decrease
+    3: 0.95   # Easy - decrease weight (card is well-learned)
+}
+
+W_new = W_current × WEIGHT_MULTIPLIERS[base_score]
+
+# Apply bounds: [0.5, 2.0]
+```
+
+**Example 1 (Again):**
+- Current weight: 1.0
+- Base score: 0 (Again)
+- Multiplier: 1.05
+- **New weight: 1.0 × 1.05 = 1.05**
+
+**Example 2 (Easy, multiple reviews):**
+- Current weight: 1.5
+- Base score: 3 (Easy)
+- Multiplier: 0.95
+- **New weight: 1.5 × 0.95 = 1.425**
+
+**Convergence:**
+- A card starting at 1.0 requires ~14 consecutive "Again" ratings to reach the max of 2.0
+- A card starting at 1.0 requires ~14 consecutive "Easy" ratings to reach the min of 0.5
 
 ---
 
@@ -1641,4 +1677,4 @@ Body: { base_score: 2 }
 
 ---
 
-**Last Updated:** December 27, 2025
+**Last Updated:** December 31, 2025

@@ -211,26 +211,33 @@ async def submit_card_review(
         card = cards[index]
         intrinsic_weight = card.get("intrinsic_weight", 1.0)
 
-        # Process the review and get updated SRS parameters
+        # Process the review and get updated SRS parameters (includes new_intrinsic_weight)
         updates = process_review(
             topic=topic,
             base_score=review.base_score,
             intrinsic_weight=intrinsic_weight
         )
 
+        # Update the card's intrinsic_weight in the cards array
+        new_intrinsic_weight = updates.pop("new_intrinsic_weight")
+        cards[index]["intrinsic_weight"] = new_intrinsic_weight
+
         # Supabase client requires JSON-serializable payloads
         db_updates = {
             key: (value.isoformat() if isinstance(value, datetime) else value)
             for key, value in updates.items()
         }
+        # Include updated cards array in single DB call
+        db_updates["cards"] = cards
 
-        # Update the topic in the database
+        # Update the topic (SRS params + cards array) in a single database call
         updated_result = db.table("topics").update(db_updates).eq("id", topic_id).execute()
         if not updated_result.data:
             raise HTTPException(status_code=500, detail="Failed to update topic")
 
         return ReviewResponse(
             topic_id=topic_id,
+            card_index=index,
             new_stability=updates["stability"],
             new_difficulty=updates["difficulty"],
             next_review=updates["next_review"],
