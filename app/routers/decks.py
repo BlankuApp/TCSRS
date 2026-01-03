@@ -15,7 +15,7 @@ router = APIRouter(prefix="/decks", tags=["decks"])
 @router.post("/", response_model=Deck, status_code=status.HTTP_201_CREATED)
 async def create_deck(
     deck: DeckCreate,
-    current_user: str = Depends(get_current_user),
+    current_user: dict = Depends(get_current_user),
     jwt_token: str = Depends(get_jwt_token)
 ):
     """Create a new deck."""
@@ -24,7 +24,7 @@ async def create_deck(
         result = db.table("decks").insert({
             "name": deck.name,
             "prompt": deck.prompt,
-            "user_id": current_user
+            "user_id": current_user["user_id"]
         }).execute()
         
         if not result.data:
@@ -36,7 +36,7 @@ async def create_deck(
 
 @router.get("/", response_model=List[Deck])
 async def get_all_decks(
-    current_user: str = Depends(get_current_user),
+    current_user: dict = Depends(get_current_user),
     jwt_token: str = Depends(get_jwt_token)
 ):
     """Get all decks for the authenticated user."""
@@ -51,7 +51,7 @@ async def get_all_decks(
 @router.get("/{deck_id}", response_model=Deck)
 async def get_deck(
     deck_id: str,
-    current_user: str = Depends(get_current_user),
+    current_user: dict = Depends(get_current_user),
     jwt_token: str = Depends(get_jwt_token)
 ):
     """Get a specific deck by ID."""
@@ -72,7 +72,7 @@ async def get_deck(
 async def update_deck(
     deck_id: str,
     deck_update: DeckUpdate,
-    current_user: str = Depends(get_current_user),
+    current_user: dict = Depends(get_current_user),
     jwt_token: str = Depends(get_jwt_token)
 ):
     """Update a deck."""
@@ -106,7 +106,7 @@ async def update_deck(
 @router.delete("/{deck_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_deck(
     deck_id: str,
-    current_user: str = Depends(get_current_user),
+    current_user: dict = Depends(get_current_user),
     jwt_token: str = Depends(get_jwt_token)
 ):
     """Delete a deck and all its topics/cards."""

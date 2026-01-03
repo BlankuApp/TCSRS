@@ -14,7 +14,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routers import ai, decks, profile, review, topics
+from app.routers import admin, ai, decks, review, topics
 
 
 @asynccontextmanager
@@ -38,21 +38,22 @@ app = FastAPI(
 
 # CORS configuration
 # TODO: Update allow_origins with your frontend URL for production
-frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
+frontend_url = os.getenv("FRONTEND_URL", "")
+allowed_origins = [origin.strip() for origin in frontend_url.split(",") if origin.strip()] if frontend_url else ["*"]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[frontend_url],  # Configure with your frontend URL
+    allow_origins=allowed_origins,  # Configure with your frontend URL(s), comma-separated
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 # Register routers (cards router removed - operations now in topics router)
+app.include_router(admin.router)
 app.include_router(ai.router)
 app.include_router(decks.router)
 app.include_router(topics.router)
 app.include_router(review.router)
-app.include_router(profile.router)
 
 
 @app.get("/", tags=["health"])

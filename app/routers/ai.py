@@ -11,7 +11,7 @@ from app.config import (
     DEFAULT_MODEL,
     DEFAULT_PROVIDER,
 )
-from app.dependencies.auth import get_current_user, get_jwt_token
+from app.dependencies.auth import get_current_user
 from app.models.schemas import (
     AIModel,
     AIProviderInfo,
@@ -21,30 +21,13 @@ from app.models.schemas import (
     GeneratedCard,
 )
 from app.services.ai_service import generate_cards_with_ai, resolve_api_key
-from app.services.database import get_user_scoped_client
 
 router = APIRouter(prefix="/ai", tags=["ai"])
 
 
-async def get_user_role(user_id: str, jwt_token: str) -> str:
-    """
-    Fetch user role from user_profiles table.
-    Returns 'user' as default if profile not found.
-    """
-    try:
-        db = get_user_scoped_client(jwt_token)
-        response = db.table("user_profiles").select("role").eq("user_id", user_id).execute()
-        
-        if response.data and len(response.data) > 0:
-            return response.data[0].get("role", "user")
-        return "user"
-    except Exception:
-        return "user"
-
-
 @router.get("/providers", response_model=AIProvidersResponse)
 async def get_providers(
-    current_user: str = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user)
 ) -> AIProvidersResponse:
     """
     Get all available AI providers and their models.
@@ -77,8 +60,7 @@ async def get_providers(
 @router.post("/generate-cards", response_model=GenerateCardsResponse, status_code=201)
 async def generate_cards(
     request: GenerateCardsRequest,
-    current_user: str = Depends(get_current_user),
-    jwt_token: str = Depends(get_jwt_token)
+    current_user: dict = Depends(get_current_user)
 ) -> GenerateCardsResponse:
     """
     Generate flashcards using AI.
@@ -94,8 +76,8 @@ async def generate_cards(
     **Supported Providers:** openai, anthropic, google, xai
     """
     try:
-        # Get user role to determine API key resolution
-        user_role = await get_user_role(current_user, jwt_token)
+        # Get user role from JWT
+        user_role = current_user["role"]
         
         # Resolve API key (user-provided or server-side for pro/admin)
         api_key = await resolve_api_key(

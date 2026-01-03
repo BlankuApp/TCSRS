@@ -24,7 +24,7 @@ router = APIRouter(prefix="/review", tags=["review"])
 @router.get("/decks/{deck_id}/cards", response_model=DeckReviewResponse)
 async def get_deck_review_cards(
     deck_id: str,
-    current_user: str = Depends(get_current_user),
+    current_user: dict = Depends(get_current_user),
     jwt_token: str = Depends(get_jwt_token)
 ):
     """
@@ -101,7 +101,7 @@ async def get_deck_review_cards(
 @router.get("/decks/{deck_id}/practice", response_model=DeckReviewResponse)
 async def get_deck_practice_cards(
     deck_id: str,
-    current_user: str = Depends(get_current_user),
+    current_user: dict = Depends(get_current_user),
     jwt_token: str = Depends(get_jwt_token)
 ):
     """
@@ -181,7 +181,7 @@ async def submit_card_review(
     topic_id: str,
     index: int,
     review: ReviewSubmission,
-    current_user: str = Depends(get_current_user),
+    current_user: dict = Depends(get_current_user),
     jwt_token: str = Depends(get_jwt_token)
 ):
     """

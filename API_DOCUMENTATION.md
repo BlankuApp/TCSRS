@@ -14,7 +14,7 @@
   - [Decks](#decks)
   - [Topics](#topics)
   - [Review](#review)
-  - [Profile](#profile)
+  - [Admin](#admin)
   - [AI Generation](#ai-generation)
 - [SRS Algorithm & Review Workflow](#srs-algorithm--review-workflow)
 - [Database Schema](#database-schema)
@@ -181,17 +181,6 @@ interface TopicListResponse {
   has_prev: boolean;             // Whether there is a previous page
 }
 
-// User Profile
-interface UserProfile {
-  user_id: string;               // UUID
-  username: string;              // 3-50 chars, alphanumeric + _ and -
-  avatar: string | null;         // HTTP/HTTPS URL
-  role: 'user' | 'admin';        // Default: 'user'
-  ai_prompts: Record<string, any>; // Custom AI prompts configuration
-  created_at: string | null;
-  updated_at: string | null;
-}
-
 // Review Card Item (includes topic_id and card_index for tracking)
 interface ReviewCardItem {
   topic_id: string;              // Parent topic UUID
@@ -287,18 +276,15 @@ interface UpdateCardRequest {
   explanation?: string;          // Multiple Choice only
 }
 
-// Create Profile
-interface CreateProfileRequest {
-  username: string;              // Required, 3-50 chars
-  avatar?: string;               // HTTP/HTTPS URL
-  ai_prompts?: Record<string, any>;
+// Admin - Update User Role
+interface UpdateUserRoleRequest {
+  role: 'user' | 'pro' | 'admin'; // Target role
 }
 
-// Update Profile
-interface UpdateProfileRequest {
-  username?: string;             // 3-50 chars
-  avatar?: string;               // HTTP/HTTPS URL
-  ai_prompts?: Record<string, any>;
+interface UpdateUserRoleResponse {
+  user_id: string;               // UUID of updated user
+  role: string;                  // New role
+  message: string;               // Success message
 }
 
 // AI Provider Types
@@ -1058,83 +1044,51 @@ Body: { base_score: 2 }
 
 ---
 
-### Profile
+### Admin
 
-#### `POST /profile/` 🔒
-Create a new user profile
-
-**Request Body:** `CreateProfileRequest`
-
-**Response:** `201 Created` → `UserProfile`
-
-**Errors:**
-- `400` - Validation error
-- `401` - Unauthorized
-- `409` - Username already taken
-
-**Important:** Profiles must be created explicitly after user registration with Supabase.
-
----
-
-#### `GET /profile/` 🔒
-Get current user's profile
-
-**Response:** `200 OK` → `UserProfile`
-
-**Errors:**
-- `401` - Unauthorized
-- `404` - Profile not found
-
----
-
-#### `PATCH /profile/` 🔒
-Update current user's profile
-
-**Request Body:** `UpdateProfileRequest`
-
-**Response:** `200 OK` → `UserProfile`
-
-**Errors:**
-- `400` - Validation error (no fields to update)
-- `401` - Unauthorized
-- `404` - Profile not found
-- `409` - Username already taken
-
-**Note:** The `role` field cannot be changed via API (database-only).
-
----
-
-#### `GET /profile/{user_id}` 🔒 (Admin Only)
-Get any user's profile by ID
+#### `POST /admin/users/{user_id}/role` 🔒 (Admin Only)
+Update a user's role
 
 **Path Parameters:**
-- `user_id` (string, UUID) - User ID
+- `user_id` (string, UUID) - Target user ID
 
-**Response:** `200 OK` → `UserProfile`
+**Request Body:** `UpdateUserRoleRequest`
+
+**Response:** `200 OK` → `UpdateUserRoleResponse`
+
+**Example Request:**
+```json
+{
+  "role": "pro"
+}
+```
+
+**Example Response:**
+```json
+{
+  "user_id": "123e4567-e89b-12d3-a456-426614174000",
+  "role": "pro",
+  "message": "Role updated to 'pro' successfully. User must re-login for changes to take effect."
+}
+```
+
+**Role Types:**
+- `user` - Default role (free tier, must provide own API keys for AI generation)
+- `pro` - Premium user (can use server-side AI API keys)
+- `admin` - Administrator (full access + can use server-side AI API keys)
 
 **Errors:**
+- `400` - Invalid role value
 - `401` - Unauthorized
 - `403` - Forbidden (not admin)
-- `404` - Profile not found
+- `404` - User not found
+- `500` - Failed to update role
 
----
-
-#### `PATCH /profile/{user_id}` 🔒 (Admin Only)
-Update any user's profile by ID
-
-**Path Parameters:**
-- `user_id` (string, UUID) - User ID
-
-**Request Body:** `UpdateProfileRequest`
-
-**Response:** `200 OK` → `UserProfile`
-
-**Errors:**
-- `400` - Validation error
-- `401` - Unauthorized
-- `403` - Forbidden (not admin)
-- `404` - Profile not found
-- `409` - Username already taken
+**Important Notes:**
+- Only admin users can update roles
+- Role is stored in Supabase auth `app_metadata.role`
+- Users must re-login (refresh JWT token) for role changes to take effect
+- Role changes are immediate in the database but require token refresh for API authorization
 
 ---
 
@@ -1608,26 +1562,26 @@ CREATE TABLE user_profiles (
 
 ---
 
-### Profile Creation Requirement
+### User Roles and Permissions
 
-**Important:** User profiles must be created explicitly after Supabase authentication.
+**Role System:**
+User roles are managed through Supabase auth metadata and included in JWT tokens:
 
-**Recommended flow:**
-```typescript
-// After successful Supabase authentication
-try {
-  // Check if profile exists
-  const profile = await getProfile(token);
-} catch (error) {
-  if (error.status === 404) {
-    // Profile doesn't exist, prompt user to create one
-    await createProfile(token, {
-      username: 'user123',
-      avatar: 'https://example.com/avatar.jpg'
-    });
-  }
-}
-```
+- **user** (default): Free tier, must provide own API keys for AI generation
+- **pro**: Premium tier, can use server-side AI API keys
+- **admin**: Full access including role management and server-side AI keys
+
+**Role Storage:**
+- Roles are stored in `auth.users.raw_app_meta_data.role`
+- Automatically set to `'user'` on signup via database trigger
+- Included in JWT `app_metadata.role` for fast authorization
+- Updated via admin endpoint using Supabase Admin SDK
+
+**Username and Avatar:**
+- Stored in `auth.users.raw_user_meta_data`
+- Set during signup or updated via `supabase.auth.updateUser()`
+- Username defaults to "User" if not provided
+- Avatar defaults to random avatar from https://avatar.iran.liara.run/public/1-100
 
 ---
 

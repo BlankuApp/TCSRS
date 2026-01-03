@@ -28,7 +28,7 @@ router = APIRouter(prefix="/topics", tags=["topics"])
 @router.post("/", response_model=Topic, status_code=status.HTTP_201_CREATED)
 async def create_topic(
     topic: TopicCreate,
-    current_user: str = Depends(get_current_user),
+    current_user: dict = Depends(get_current_user),
     jwt_token: str = Depends(get_jwt_token)
 ):
     """Create a new topic with optional initial cards."""
@@ -74,7 +74,7 @@ async def get_topics_by_deck(
     page_size: int = Query(default=25, ge=1, le=100, description="Number of items per page"),
     sort_by: Literal["name", "difficulty", "stability", "next_review", "last_reviewed", "created_at", "updated_at"] = Query(default="name", description="Field to sort by"),
     sort_order: Literal["asc", "desc"] = Query(default="asc", description="Sort direction"),
-    current_user: str = Depends(get_current_user),
+    current_user: dict = Depends(get_current_user),
     jwt_token: str = Depends(get_jwt_token)
 ):
     """Get topics in a deck with pagination and sorting."""
@@ -127,7 +127,7 @@ async def get_topics_by_deck(
 @router.get("/due", response_model=List[Topic])
 async def get_due_topics(
     limit: int = None,
-    current_user: str = Depends(get_current_user),
+    current_user: dict = Depends(get_current_user),
     jwt_token: str = Depends(get_jwt_token)
 ):
     """Get topics that are due for review for the authenticated user."""
@@ -152,7 +152,7 @@ async def get_due_topics(
 @router.get("/{topic_id}", response_model=Topic)
 async def get_topic(
     topic_id: str,
-    current_user: str = Depends(get_current_user),
+    current_user: dict = Depends(get_current_user),
     jwt_token: str = Depends(get_jwt_token)
 ):
     """Get a specific topic by ID with its cards."""
@@ -179,7 +179,7 @@ async def get_topic(
 async def update_topic(
     topic_id: str,
     topic_update: TopicUpdate,
-    current_user: str = Depends(get_current_user),
+    current_user: dict = Depends(get_current_user),
     jwt_token: str = Depends(get_jwt_token)
 ):
     """Update a topic (including replacing entire cards array if provided)."""
@@ -228,7 +228,7 @@ async def update_topic(
 @router.delete("/{topic_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_topic(
     topic_id: str,
-    current_user: str = Depends(get_current_user),
+    current_user: dict = Depends(get_current_user),
     jwt_token: str = Depends(get_jwt_token)
 ):
     """Delete a topic and all its embedded cards."""
@@ -305,7 +305,7 @@ def _build_card_item(card: CardCreate, batch_index: int) -> dict:
 async def add_card_to_topic(
     topic_id: str,
     card: CardCreate,
-    current_user: str = Depends(get_current_user),
+    current_user: dict = Depends(get_current_user),
     jwt_token: str = Depends(get_jwt_token)
 ):
     """Add a new card to a topic's cards array."""
@@ -353,7 +353,7 @@ async def add_card_to_topic(
 async def add_cards_batch_to_topic(
     topic_id: str,
     batch: CardCreateBatch,
-    current_user: str = Depends(get_current_user),
+    current_user: dict = Depends(get_current_user),
     jwt_token: str = Depends(get_jwt_token)
 ):
     """Add multiple cards to a topic's cards array in batch mode."""
@@ -422,7 +422,7 @@ async def add_cards_batch_to_topic(
 @router.get("/{topic_id}/cards", response_model=List[CardItem])
 async def get_topic_cards(
     topic_id: str,
-    current_user: str = Depends(get_current_user),
+    current_user: dict = Depends(get_current_user),
     jwt_token: str = Depends(get_jwt_token)
 ):
     """Get all cards for a topic."""
@@ -451,7 +451,7 @@ async def update_card_in_topic(
     topic_id: str,
     index: int,
     card_update: CardUpdate,
-    current_user: str = Depends(get_current_user),
+    current_user: dict = Depends(get_current_user),
     jwt_token: str = Depends(get_jwt_token)
 ):
     """Update a card's properties at a specific index."""
@@ -531,7 +531,7 @@ async def update_card_in_topic(
 async def delete_card_from_topic(
     topic_id: str,
     index: int,
-    current_user: str = Depends(get_current_user),
+    current_user: dict = Depends(get_current_user),
     jwt_token: str = Depends(get_jwt_token)
 ):
     """Delete a card at a specific index from a topic's cards array."""
