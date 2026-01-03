@@ -54,7 +54,7 @@ async def get_current_user(
 ) -> dict:
     """
     Extract and validate the current user from JWT token.
-    Returns user_id and role from JWT app_metadata.
+    Returns user_id and role from JWT user_metadata.
     
     Args:
         credentials: HTTP Bearer token from Authorization header
@@ -76,9 +76,9 @@ async def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
     
-    # Extract role from app_metadata (set by Supabase auth trigger)
-    app_metadata = payload.get("app_metadata", {})
-    role = app_metadata.get("role", "user")
+    # Extract role from user_metadata (set by Supabase auth trigger)
+    user_metadata = payload.get("user_metadata", {})
+    role = user_metadata.get("role", "user")
     
     return {"user_id": user_id, "role": role}
 

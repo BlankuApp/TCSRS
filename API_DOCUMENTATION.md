@@ -287,6 +287,27 @@ interface UpdateUserRoleResponse {
   message: string;               // Success message
 }
 
+// User Info (Admin)
+interface UserInfo {
+  id: string;                    // UUID of user
+  email: string;                 // User email address
+  username: string;              // Display name (default: "User")
+  avatar: string | null;         // Avatar URL (can be null)
+  role: string;                  // User role: 'user', 'pro', or 'admin'
+  created_at: string;            // ISO 8601 datetime
+}
+
+// User List Response (Paginated)
+interface UserListResponse {
+  items: UserInfo[];             // Users on current page
+  total: number;                 // Total number of users (after filtering)
+  page: number;                  // Current page number (1-based)
+  page_size: number;             // Items per page
+  total_pages: number;           // Total number of pages
+  has_next: boolean;             // Whether there is a next page
+  has_prev: boolean;             // Whether there is a previous page
+}
+
 // AI Provider Types
 type AIProvider = 'openai' | 'google' | 'xai' | 'anthropic';
 
@@ -1086,9 +1107,104 @@ Update a user's role
 
 **Important Notes:**
 - Only admin users can update roles
-- Role is stored in Supabase auth `app_metadata.role`
+- Role is stored in Supabase auth `user_metadata.role`
 - Users must re-login (refresh JWT token) for role changes to take effect
 - Role changes are immediate in the database but require token refresh for API authorization
+
+---
+
+#### `GET /admin/users` 🔒 (Admin Only)
+List all users with pagination, filtering, and search
+
+**Query Parameters:**
+
+| Parameter | Type | Default | Required | Description |
+|-----------|------|---------|----------|-------------|
+| `page` | integer | 1 | No | Page number (1-based, minimum: 1) |
+| `page_size` | integer | 25 | No | Items per page (minimum: 1, maximum: 100) |
+| `sort_by` | string | `"created_at"` | No | Field to sort by (see sortable fields below) |
+| `sort_order` | string | `"desc"` | No | Sort direction: `"asc"` or `"desc"` |
+| `role` | string | null | No | Filter by role: `"user"`, `"pro"`, or `"admin"` |
+| `search` | string | null | No | Search in email or username (case-insensitive substring) |
+
+**Sortable Fields:**
+
+| Field | Description | Data Type |
+|-------|-------------|----------|
+| `email` | User email address (alphabetical) | string |
+| `username` | Display name (alphabetical) | string |
+| `role` | User role | string |
+| `created_at` | Account creation date | datetime |
+
+**Response:** `200 OK` → `UserListResponse`
+
+**Errors:**
+- `401` - Unauthorized
+- `403` - Forbidden (not admin)
+- `422` - Invalid query parameters
+- `500` - Failed to list users
+
+**Example Requests:**
+
+```typescript
+// Get first page (default: 25 users, sorted by created_at descending)
+GET /admin/users?page=1
+
+// Get second page with 50 users per page
+GET /admin/users?page=2&page_size=50
+
+// Sort by email (alphabetical)
+GET /admin/users?sort_by=email&sort_order=asc
+
+// Filter by role (only pro users)
+GET /admin/users?role=pro
+
+// Search for users with "john" in email or username
+GET /admin/users?search=john
+
+// Combine: search for admins with "smith" in email/username, sorted by username
+GET /admin/users?role=admin&search=smith&sort_by=username&sort_order=asc
+```
+
+**Example Response:**
+
+```typescript
+{
+  items: [
+    {
+      id: "123e4567-e89b-12d3-a456-426614174000",
+      email: "john.doe@example.com",
+      username: "John Doe",
+      avatar: "https://avatar.iran.liara.run/public/42",
+      role: "pro",
+      created_at: "2025-12-01T10:30:00Z"
+    },
+    {
+      id: "987fcdeb-51a2-43f7-9c8d-6e5a4b3c2d1e",
+      email: "jane.smith@example.com",
+      username: "Jane Smith",
+      avatar: null,
+      role: "user",
+      created_at: "2025-12-15T14:20:00Z"
+    }
+  ],
+  total: 2,
+  page: 1,
+  page_size: 25,
+  total_pages: 1,
+  has_next: false,
+  has_prev: false
+}
+```
+
+**Notes:**
+- Only admin users can list all users
+- Username defaults to "User" if not set during signup
+- Avatar can be null if not set
+- Role defaults to "user" if not set in user_metadata
+- Search is case-insensitive and matches substrings in both email and username fields
+- Total count reflects the number of users after filtering (not all users in the system)
+- Results are fetched from Supabase auth system, not from a user_profiles table
 
 ---
 
@@ -1574,7 +1690,7 @@ User roles are managed through Supabase auth metadata and included in JWT tokens
 **Role Storage:**
 - Roles are stored in `auth.users.raw_app_meta_data.role`
 - Automatically set to `'user'` on signup via database trigger
-- Included in JWT `app_metadata.role` for fast authorization
+- Included in JWT `user_metadata.role` for fast authorization
 - Updated via admin endpoint using Supabase Admin SDK
 
 **Username and Avatar:**
