@@ -294,6 +294,8 @@ interface UserInfo {
   username: string;              // Display name (default: "User")
   avatar: string | null;         // Avatar URL (can be null)
   role: string;                  // User role: 'user', 'pro', or 'admin'
+  credits: number | null;        // Available credits (6 decimal precision, null if not set)
+  total_spent: number | null;    // Total credits spent (6 decimal precision, null if not set)
   created_at: string;            // ISO 8601 datetime
 }
 
@@ -355,6 +357,7 @@ interface GenerateCardsResponse {
   output_tokens: number | null;  // Number of output tokens generated (null if unavailable)
   total_tokens: number | null;   // Total tokens used (input + output, null if unavailable)
   cost_usd: number | null;       // Total cost in USD with 6 decimal precision (null if unavailable)
+  remaining_credits: number | null; // User's remaining credits after this request (6 decimal precision, null if unavailable)
 }
 ```
 
@@ -1181,6 +1184,8 @@ GET /admin/users?role=admin&search=smith&sort_by=username&sort_order=asc
       username: "John Doe",
       avatar: "https://avatar.iran.liara.run/public/42",
       role: "pro",
+      credits: 15.750000,
+      total_spent: 2.450000,
       created_at: "2025-12-01T10:30:00Z"
     },
     {
@@ -1189,6 +1194,8 @@ GET /admin/users?role=admin&search=smith&sort_by=username&sort_order=asc
       username: "Jane Smith",
       avatar: null,
       role: "user",
+      credits: 0.000000,
+      total_spent: 0.000000,
       created_at: "2025-12-15T14:20:00Z"
     }
   ],
@@ -1209,6 +1216,96 @@ GET /admin/users?role=admin&search=smith&sort_by=username&sort_order=asc
 - Search is case-insensitive and matches substrings in both email and username fields
 - Total count reflects the number of users after filtering (not all users in the system)
 - Results are fetched from Supabase auth system, not from a user_profiles table
+
+---
+
+#### `POST /admin/users/{user_id}/credits/add` 🔒 (Admin Only)
+Add credits to a user's account
+
+**Path Parameters:**
+- `user_id` (string, UUID) - Target user ID
+
+**Request Body:** `AddCreditsRequest`
+
+```typescript
+interface AddCreditsRequest {
+  credits: number;  // Amount of credits to add (must be positive)
+}
+```
+
+**Response:** `200 OK` → `UserCreditsResponse`
+
+```typescript
+interface UserCreditsResponse {
+  user_id: string;      // User's unique identifier
+  credits: number;      // Current available credits (6 decimal precision)
+  total_spent: number;  // Total credits spent (6 decimal precision)
+  message: string;      // Success message
+}
+```
+
+**Example Request:**
+```typescript
+POST /admin/users/123e4567-e89b-12d3-a456-426614174000/credits/add
+Body: {
+  credits: 10.50
+}
+```
+
+**Example Response:**
+```json
+{
+  "user_id": "123e4567-e89b-12d3-a456-426614174000",
+  "credits": 15.750000,
+  "total_spent": 2.450000,
+  "message": "Successfully added 10.5 credits. New balance: 15.75"
+}
+```
+
+**Errors:**
+- `400` - Invalid credits value (must be positive)
+- `401` - Unauthorized
+- `403` - Forbidden (not admin)
+- `404` - User not found
+- `500` - Failed to add credits
+
+**Important Notes:**
+- Only admin users can add credits
+- Credits are stored in Supabase auth `user_metadata.credits`
+- Credits are rounded to 6 decimal places for precision
+- Adding credits does not affect total_spent
+- Users do not need to re-login for credits changes to take effect (credits are checked server-side)
+
+---
+
+#### `GET /admin/users/{user_id}/credits` 🔒 (Admin Only)
+Get a user's credits information
+
+**Path Parameters:**
+- `user_id` (string, UUID) - Target user ID
+
+**Response:** `200 OK` → `UserCreditsResponse`
+
+**Example Response:**
+```json
+{
+  "user_id": "123e4567-e89b-12d3-a456-426614174000",
+  "credits": 15.750000,
+  "total_spent": 2.450000,
+  "message": "Credits retrieved successfully"
+}
+```
+
+**Errors:**
+- `401` - Unauthorized
+- `403` - Forbidden (not admin)
+- `404` - User not found
+- `500` - Failed to retrieve credits
+
+**Notes:**
+- Only admin users can view any user's credits
+- Returns current available credits and lifetime total spent
+- Both values use 6 decimal precision to match cost_usd format
 
 ---
 
@@ -1275,6 +1372,13 @@ Generate flashcards using AI
 - If `api_key` is empty/omitted and user role is `'pro'` or `'admin'`, the server-side API key from environment variables is used.
 - If `api_key` is empty/omitted and user role is `'user'`, returns `403 Forbidden`.
 
+**Credits System:**
+- User must have `credits > 0.0` to generate cards
+- Credits are automatically deducted based on actual cost after successful generation
+- Response includes `remaining_credits` showing balance after deduction
+- If generation fails, no credits are deducted
+- Credits and costs use 6 decimal precision
+
 **Example Request:**
 ```typescript
 POST /ai/generate-cards
@@ -1315,7 +1419,8 @@ Body: {
   input_tokens: 1250,
   output_tokens: 850,
   total_tokens: 2100,
-  cost_usd: 0.005250
+  cost_usd: 0.005250,
+  remaining_credits: 14.744750
 }
 ```
 
@@ -1326,12 +1431,14 @@ The response includes token usage and cost information:
 - **output_tokens**: Number of tokens in the AI's response
 - **total_tokens**: Sum of input and output tokens
 - **cost_usd**: Calculated cost in USD based on the provider's pricing (6 decimal places)
+- **remaining_credits**: User's remaining credits after deduction (6 decimal places)
 
 If token usage data is not available from the AI provider, these fields will be `null`.
 
 **Errors:**
 - `400` - Validation error, invalid provider/model, or AI provider API error
 - `401` - Unauthorized
+- `402` - Payment Required (insufficient credits, user must contact admin to add credits)
 - `403` - API key required (user role is 'user' and no api_key provided)
 - `500` - Server-side API key not configured, or AI response parsing error
 

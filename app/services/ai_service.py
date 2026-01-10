@@ -293,7 +293,7 @@ def calculate_cost(provider: str, model: str, input_tokens: int, output_tokens: 
     total_cost = (input_tokens * cost_per_input / 1_000_000) + (output_tokens * cost_per_output / 1_000_000)
     
     # Round to 6 decimal places
-    return round(total_cost, 6)
+    return round(total_cost * 2.0, 6)
 
 
 def parse_ai_response(content: str, provider_name: str) -> dict:

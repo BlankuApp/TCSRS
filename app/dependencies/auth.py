@@ -2,7 +2,7 @@
 JWT authentication dependencies for FastAPI routes.
 """
 import os
-from typing import Optional, Tuple
+from typing import Optional
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -79,8 +79,15 @@ async def get_current_user(
     # Extract role from user_metadata (set by Supabase auth trigger)
     user_metadata = payload.get("user_metadata", {})
     role = user_metadata.get("role", "user")
+    credits = user_metadata.get("credits", 0.0)
+    total_spent = user_metadata.get("total_spent", 0.0)
     
-    return {"user_id": user_id, "role": role}
+    return {
+        "user_id": user_id,
+        "role": role,
+        "credits": credits,
+        "total_spent": total_spent
+    }
 
 
 async def get_jwt_token(

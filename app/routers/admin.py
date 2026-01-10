@@ -10,6 +10,7 @@ from pydantic import BaseModel
 from supabase import create_client, Client
 
 from app.dependencies.auth import require_admin
+from app.models.schemas import AddCreditsRequest, UserCreditsResponse
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -48,6 +49,8 @@ class UserInfo(BaseModel):
     username: str
     avatar: Optional[str]
     role: str
+    credits: Optional[float]
+    total_spent: Optional[float]
     created_at: str
 
 
@@ -201,6 +204,10 @@ async def list_users(
             created_at_raw = getattr(user, 'created_at', '')
             created_at = created_at_raw.isoformat() if hasattr(created_at_raw, 'isoformat') else str(created_at_raw)
             
+            # Extract credits and total_spent from user_metadata
+            credits = raw_user_meta.get('credits', 0.0)
+            total_spent = raw_user_meta.get('total_spent', 0.0)
+            
             # Apply role filter
             if role and user_role != role:
                 continue
@@ -217,6 +224,8 @@ async def list_users(
                 username=username,
                 avatar=avatar,
                 role=user_role,
+                credits=credits,
+                total_spent=total_spent,
                 created_at=created_at
             ))
         
@@ -260,4 +269,121 @@ async def list_users(
         raise HTTPException(
             status_code=500,
             detail=f"Failed to list users: {str(e)}"
+        )
+
+
+@router.post("/users/{user_id}/credits/add", response_model=UserCreditsResponse)
+async def add_credits(
+    user_id: str,
+    request: AddCreditsRequest,
+    current_user: dict = Depends(require_admin)
+) -> UserCreditsResponse:
+    """
+    Add credits to a user's account. Admin only.
+    
+    Updates the user's `user_metadata.credits` in Supabase auth.
+    Credits are rounded to 6 decimal places for precision.
+    
+    **Requirements:**
+    - Must be authenticated as admin
+    - Target user must exist in Supabase auth
+    - Credits amount must be positive
+    
+    **Note:** Credits are stored with 6 decimal precision to match cost_usd format.
+    """
+    try:
+        admin_client = get_admin_client()
+        
+        # Get current user data to retrieve existing credits and total_spent
+        user_response = admin_client.auth.admin.get_user_by_id(user_id)
+        
+        if not user_response or not user_response.user:
+            raise HTTPException(
+                status_code=404,
+                detail=f"User {user_id} not found"
+            )
+        
+        user_metadata = user_response.user.user_metadata or {}
+        current_credits = user_metadata.get('credits', 0.0)
+        total_spent = user_metadata.get('total_spent', 0.0)
+        
+        # Add credits and round to 6 decimal places
+        new_credits = round(current_credits + request.credits, 6)
+        
+        # Update user_metadata with new credits
+        update_response = admin_client.auth.admin.update_user_by_id(
+            user_id,
+            {"user_metadata": {"credits": new_credits}}
+        )
+        
+        if not update_response:
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to update user credits"
+            )
+        
+        return UserCreditsResponse(
+            user_id=user_id,
+            credits=new_credits,
+            total_spent=total_spent,
+            message=f"Successfully added {request.credits} credits. New balance: {new_credits}"
+        )
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to add credits: {str(e)}"
+        )
+
+
+@router.get("/users/{user_id}/credits", response_model=UserCreditsResponse)
+async def get_user_credits(
+    user_id: str,
+    current_user: dict = Depends(require_admin)
+) -> UserCreditsResponse:
+    """
+    Get a user's credits information. Admin only.
+    
+    Retrieves the user's current credits and total_spent from Supabase auth.
+    
+    **Requirements:**
+    - Must be authenticated as admin
+    - Target user must exist in Supabase auth
+    
+    **Returns:**
+    - user_id: User's unique identifier
+    - credits: Current available credits (6 decimal precision)
+    - total_spent: Total credits spent by user (6 decimal precision)
+    """
+    try:
+        admin_client = get_admin_client()
+        
+        # Get user data
+        user_response = admin_client.auth.admin.get_user_by_id(user_id)
+        
+        if not user_response or not user_response.user:
+            raise HTTPException(
+                status_code=404,
+                detail=f"User {user_id} not found"
+            )
+        
+        user_metadata = user_response.user.user_metadata or {}
+        credits = user_metadata.get('credits', 0.0)
+        total_spent = user_metadata.get('total_spent', 0.0)
+        
+        return UserCreditsResponse(
+            user_id=user_id,
+            credits=credits,
+            total_spent=total_spent,
+            message="Credits retrieved successfully"
+        )
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to retrieve credits: {str(e)}"
         )

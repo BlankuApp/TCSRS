@@ -286,3 +286,22 @@ class GenerateCardsResponse(BaseModel):
     output_tokens: Optional[int] = Field(None, description="Number of output tokens generated")
     total_tokens: Optional[int] = Field(None, description="Total tokens used (input + output)")
     cost_usd: Optional[float] = Field(None, description="Total cost in USD (6 decimal precision)")
+    remaining_credits: Optional[float] = Field(None, description="User's remaining credits after this request (6 decimal precision)")
+
+
+# =====================
+# Admin Credits Models
+# =====================
+
+class AddCreditsRequest(BaseModel):
+    """Request to add credits to a user's account."""
+    credits: float = Field(..., gt=0, description="Amount of credits to add (must be positive)")
+
+
+class UserCreditsResponse(BaseModel):
+    """Response containing user's credits information."""
+    user_id: str = Field(..., description="User's unique identifier")
+    credits: float = Field(..., description="Current available credits (6 decimal precision)")
+    total_spent: float = Field(..., description="Total credits spent (6 decimal precision)")
+    message: str = Field(..., description="Success or status message")
+    remaining_credits: Optional[float] = Field(None, description="User's remaining credits after this request (6 decimal precision)")
