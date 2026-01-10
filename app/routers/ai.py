@@ -74,6 +74,11 @@ async def generate_cards(
     - If `api_key` is empty and user role is 'user', returns 403 Forbidden.
     
     **Supported Providers:** openai, anthropic, google, xai
+    
+    **Cost Tracking:**
+    - Response includes token usage (input_tokens, output_tokens, total_tokens)
+    - Response includes cost_usd with 6 decimal precision
+    - If token data is unavailable, these fields will be null
     """
     try:
         # Get user role from JWT
@@ -90,8 +95,8 @@ async def generate_cards(
         system_prompt = f"{request.deck_prompt}\n{CARD_FORMAT_PROMPT}"
         user_message = f"Generate flashcards for this topic based on the instructions.\n\n#Topic: \n{request.topic_name}"
         
-        # Generate cards
-        cards = await generate_cards_with_ai(
+        # Generate cards with token tracking
+        cards, input_tokens, output_tokens, cost_usd = await generate_cards_with_ai(
             provider=request.provider,
             model=request.model,
             api_key=api_key,
@@ -114,7 +119,18 @@ async def generate_cards(
                 )
             )
         
-        return GenerateCardsResponse(cards=generated_cards)
+        # Calculate total tokens
+        total_tokens = None
+        if input_tokens is not None and output_tokens is not None:
+            total_tokens = input_tokens + output_tokens
+        
+        return GenerateCardsResponse(
+            cards=generated_cards,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            total_tokens=total_tokens,
+            cost_usd=cost_usd
+        )
     
     except HTTPException:
         raise

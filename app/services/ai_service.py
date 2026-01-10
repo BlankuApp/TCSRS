@@ -4,12 +4,13 @@ Supports OpenAI, Anthropic, Google, and xAI providers.
 """
 import json
 import os
+from typing import Tuple, Optional
 
 
 import httpx
 from fastapi import HTTPException
 
-from app.config import get_provider_env_key, get_provider_display_name
+from app.config import get_provider_env_key, get_provider_display_name, get_model_cost
 
 
 async def call_openai(
@@ -17,8 +18,8 @@ async def call_openai(
     user_message: str,
     model: str,
     api_key: str
-) -> str:
-    """Call OpenAI API to generate content."""
+) -> Tuple[str, int, int]:
+    """Call OpenAI API to generate content. Returns (content, input_tokens, output_tokens)."""
     async with httpx.AsyncClient() as client:
         response = await client.post(
             "https://api.openai.com/v1/chat/completions",
@@ -34,7 +35,7 @@ async def call_openai(
                 ],
                 "response_format": {"type": "json_object"},
             },
-            timeout=60.0,
+            timeout=700.0,
         )
 
         if response.status_code == 401:
@@ -52,7 +53,13 @@ async def call_openai(
         content = data.get("choices", [{}])[0].get("message", {}).get("content")
         if not content:
             raise HTTPException(status_code=500, detail="No response from OpenAI")
-        return content
+        
+        # Extract token usage
+        usage = data.get("usage", {})
+        input_tokens = usage.get("prompt_tokens", 0)
+        output_tokens = usage.get("completion_tokens", 0)
+        
+        return content, input_tokens, output_tokens
 
 
 async def call_anthropic(
@@ -60,8 +67,8 @@ async def call_anthropic(
     user_message: str,
     model: str,
     api_key: str
-) -> str:
-    """Call Anthropic API to generate content."""
+) -> Tuple[str, int, int]:
+    """Call Anthropic API to generate content. Returns (content, input_tokens, output_tokens)."""
     async with httpx.AsyncClient() as client:
         response = await client.post(
             "https://api.anthropic.com/v1/messages",
@@ -94,11 +101,21 @@ async def call_anthropic(
 
         data = response.json()
         content_list = data.get("content", [])
+        content = ""
         for item in content_list:
             if item.get("type") == "text":
-                return item.get("text", "")
+                content = item.get("text", "")
+                break
         
-        raise HTTPException(status_code=500, detail="No text response from Anthropic")
+        if not content:
+            raise HTTPException(status_code=500, detail="No text response from Anthropic")
+        
+        # Extract token usage
+        usage = data.get("usage", {})
+        input_tokens = usage.get("input_tokens", 0)
+        output_tokens = usage.get("output_tokens", 0)
+        
+        return content, input_tokens, output_tokens
 
 
 async def call_google(
@@ -106,8 +123,8 @@ async def call_google(
     user_message: str,
     model: str,
     api_key: str
-) -> str:
-    """Call Google AI API to generate content."""
+) -> Tuple[str, int, int]:
+    """Call Google AI API to generate content. Returns (content, input_tokens, output_tokens)."""
     async with httpx.AsyncClient() as client:
         response = await client.post(
             f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
@@ -152,7 +169,13 @@ async def call_google(
         )
         if not content:
             raise HTTPException(status_code=500, detail="No response from Google AI")
-        return content
+        
+        # Extract token usage
+        usage_metadata = data.get("usageMetadata", {})
+        input_tokens = usage_metadata.get("promptTokenCount", 0)
+        output_tokens = usage_metadata.get("candidatesTokenCount", 0)
+        
+        return content, input_tokens, output_tokens
 
 
 async def call_xai(
@@ -160,8 +183,8 @@ async def call_xai(
     user_message: str,
     model: str,
     api_key: str
-) -> str:
-    """Call xAI API to generate content."""
+) -> Tuple[str, int, int]:
+    """Call xAI API to generate content. Returns (content, input_tokens, output_tokens)."""
     async with httpx.AsyncClient() as client:
         response = await client.post(
             "https://api.x.ai/v1/chat/completions",
@@ -195,7 +218,13 @@ async def call_xai(
         content = data.get("choices", [{}])[0].get("message", {}).get("content")
         if not content:
             raise HTTPException(status_code=500, detail="No response from xAI")
-        return content
+        
+        # Extract token usage
+        usage = data.get("usage", {})
+        input_tokens = usage.get("prompt_tokens", 0)
+        output_tokens = usage.get("completion_tokens", 0)
+        
+        return content, input_tokens, output_tokens
 
 
 async def resolve_api_key(
@@ -237,6 +266,34 @@ async def resolve_api_key(
         )
     
     return server_key
+
+
+def calculate_cost(provider: str, model: str, input_tokens: int, output_tokens: int) -> Optional[float]:
+    """
+    Calculate the total cost of a generation request.
+    
+    Args:
+        provider: Provider identifier
+        model: Model identifier
+        input_tokens: Number of input tokens used
+        output_tokens: Number of output tokens generated
+    
+    Returns:
+        Total cost in USD with 6 decimal precision, or None if pricing not available
+    """
+    costs = get_model_cost(provider, model)
+    if not costs:
+        return None
+    
+    cost_per_input, cost_per_output = costs
+    if cost_per_input is None or cost_per_output is None:
+        return None
+    
+    # Costs are in USD per 1M tokens
+    total_cost = (input_tokens * cost_per_input / 1_000_000) + (output_tokens * cost_per_output / 1_000_000)
+    
+    # Round to 6 decimal places
+    return round(total_cost, 6)
 
 
 def parse_ai_response(content: str, provider_name: str) -> dict:
@@ -289,11 +346,13 @@ async def generate_cards_with_ai(
     api_key: str,
     system_prompt: str,
     user_message: str
-) -> list:
+) -> Tuple[list, Optional[int], Optional[int], Optional[float]]:
     """
     Generate cards using the specified AI provider.
     
-    Returns list of generated card dicts.
+    Returns:
+        Tuple of (cards_list, input_tokens, output_tokens, cost_usd)
+        Token counts and cost may be None if not available.
     """
     provider_name = get_provider_display_name(provider)
     
@@ -304,7 +363,7 @@ async def generate_cards_with_ai(
         )
     
     call_fn = PROVIDER_FUNCTIONS[provider]
-    content = await call_fn(system_prompt, user_message, model, api_key)
+    content, input_tokens, output_tokens = await call_fn(system_prompt, user_message, model, api_key)
     
     if not content:
         raise HTTPException(
@@ -313,4 +372,10 @@ async def generate_cards_with_ai(
         )
     
     parsed = parse_ai_response(content, provider_name)
-    return parsed["cards"]
+    
+    # Calculate cost
+    cost_usd = None
+    if input_tokens and output_tokens:
+        cost_usd = calculate_cost(provider, model, input_tokens, output_tokens)
+    
+    return parsed["cards"], input_tokens, output_tokens, cost_usd

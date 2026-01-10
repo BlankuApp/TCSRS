@@ -11,6 +11,7 @@ from .ai_providers import (
     get_provider_display_name,
     get_provider_env_key,
     get_all_providers,
+    get_model_cost,
 )
 
 __all__ = [
@@ -24,4 +25,5 @@ __all__ = [
     "get_provider_display_name",
     "get_provider_env_key",
     "get_all_providers",
+    "get_model_cost",
 ]

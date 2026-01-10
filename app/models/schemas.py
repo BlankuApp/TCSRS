@@ -282,3 +282,7 @@ class GeneratedCard(BaseModel):
 class GenerateCardsResponse(BaseModel):
     """Response containing generated cards."""
     cards: List[GeneratedCard] = Field(..., description="List of generated cards")
+    input_tokens: Optional[int] = Field(None, description="Number of input tokens used")
+    output_tokens: Optional[int] = Field(None, description="Number of output tokens generated")
+    total_tokens: Optional[int] = Field(None, description="Total tokens used (input + output)")
+    cost_usd: Optional[float] = Field(None, description="Total cost in USD (6 decimal precision)")

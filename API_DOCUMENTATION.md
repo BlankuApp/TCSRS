@@ -351,6 +351,10 @@ interface GeneratedCard {
 // Generate Cards Response
 interface GenerateCardsResponse {
   cards: GeneratedCard[];        // List of generated cards
+  input_tokens: number | null;   // Number of input tokens used (null if unavailable)
+  output_tokens: number | null;  // Number of output tokens generated (null if unavailable)
+  total_tokens: number | null;   // Total tokens used (input + output, null if unavailable)
+  cost_usd: number | null;       // Total cost in USD with 6 decimal precision (null if unavailable)
 }
 ```
 
@@ -1307,9 +1311,23 @@ Body: {
       correct_index: 0,
       explanation: "The angle brackets <T> declare a type parameter..."
     }
-  ]
+  ],
+  input_tokens: 1250,
+  output_tokens: 850,
+  total_tokens: 2100,
+  cost_usd: 0.005250
 }
 ```
+
+**Token Usage and Cost Tracking:**
+
+The response includes token usage and cost information:
+- **input_tokens**: Number of tokens in the prompt (deck_prompt + topic_name)
+- **output_tokens**: Number of tokens in the AI's response
+- **total_tokens**: Sum of input and output tokens
+- **cost_usd**: Calculated cost in USD based on the provider's pricing (6 decimal places)
+
+If token usage data is not available from the AI provider, these fields will be `null`.
 
 **Errors:**
 - `400` - Validation error, invalid provider/model, or AI provider API error
