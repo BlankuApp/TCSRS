@@ -291,8 +291,8 @@ interface UpdateUserRoleResponse {
 interface UserInfo {
   id: string;                    // UUID of user
   email: string;                 // User email address
-  username: string;              // Display name (default: "User")
-  avatar: string | null;         // Avatar URL (can be null)
+  name: string;                  // Display name (default: "User")
+  avatar_url: string | null;     // Avatar URL (can be null)
   role: string;                  // User role: 'user', 'pro', or 'admin'
   credits: number | null;        // Available credits (6 decimal precision, null if not set)
   total_spent: number | null;    // Total credits spent (6 decimal precision, null if not set)
@@ -1132,14 +1132,14 @@ List all users with pagination, filtering, and search
 | `sort_by` | string | `"created_at"` | No | Field to sort by (see sortable fields below) |
 | `sort_order` | string | `"desc"` | No | Sort direction: `"asc"` or `"desc"` |
 | `role` | string | null | No | Filter by role: `"user"`, `"pro"`, or `"admin"` |
-| `search` | string | null | No | Search in email or username (case-insensitive substring) |
+| `search` | string | null | No | Search in email or name (case-insensitive substring) |
 
 **Sortable Fields:**
 
 | Field | Description | Data Type |
 |-------|-------------|----------|
 | `email` | User email address (alphabetical) | string |
-| `username` | Display name (alphabetical) | string |
+| `name` | Display name (alphabetical) | string |
 | `role` | User role | string |
 | `created_at` | Account creation date | datetime |
 
@@ -1166,11 +1166,11 @@ GET /admin/users?sort_by=email&sort_order=asc
 // Filter by role (only pro users)
 GET /admin/users?role=pro
 
-// Search for users with "john" in email or username
+// Search for users with "john" in email or name
 GET /admin/users?search=john
 
-// Combine: search for admins with "smith" in email/username, sorted by username
-GET /admin/users?role=admin&search=smith&sort_by=username&sort_order=asc
+// Combine: search for admins with "smith" in email/name, sorted by name
+GET /admin/users?role=admin&search=smith&sort_by=name&sort_order=asc
 ```
 
 **Example Response:**
@@ -1181,8 +1181,8 @@ GET /admin/users?role=admin&search=smith&sort_by=username&sort_order=asc
     {
       id: "123e4567-e89b-12d3-a456-426614174000",
       email: "john.doe@example.com",
-      username: "John Doe",
-      avatar: "https://avatar.iran.liara.run/public/42",
+      name: "John Doe",
+      avatar_url: "https://avatar.iran.liara.run/public/42",
       role: "pro",
       credits: 15.750000,
       total_spent: 2.450000,
@@ -1191,8 +1191,8 @@ GET /admin/users?role=admin&search=smith&sort_by=username&sort_order=asc
     {
       id: "987fcdeb-51a2-43f7-9c8d-6e5a4b3c2d1e",
       email: "jane.smith@example.com",
-      username: "Jane Smith",
-      avatar: null,
+      name: "Jane Smith",
+      avatar_url: null,
       role: "user",
       credits: 0.000000,
       total_spent: 0.000000,
@@ -1210,10 +1210,10 @@ GET /admin/users?role=admin&search=smith&sort_by=username&sort_order=asc
 
 **Notes:**
 - Only admin users can list all users
-- Username defaults to "User" if not set during signup
-- Avatar can be null if not set
+- Name defaults to "User" if not set during signup
+- Avatar URL can be null if not set
 - Role defaults to "user" if not set in user_metadata
-- Search is case-insensitive and matches substrings in both email and username fields
+- Search is case-insensitive and matches substrings in both email and name fields
 - Total count reflects the number of users after filtering (not all users in the system)
 - Results are fetched from Supabase auth system, not from a user_profiles table
 
@@ -1749,8 +1749,8 @@ CREATE TABLE topics (
 ```sql
 CREATE TABLE user_profiles (
   user_id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
-  username VARCHAR(50) UNIQUE NOT NULL,
-  avatar TEXT,
+  name VARCHAR(50) UNIQUE NOT NULL,
+  avatar_url TEXT,
   role VARCHAR(20) DEFAULT 'user',
   ai_prompts JSONB DEFAULT '{}'::jsonb,
   created_at TIMESTAMPTZ DEFAULT NOW(),
@@ -1818,11 +1818,11 @@ User roles are managed through Supabase auth metadata and included in JWT tokens
 - Included in JWT `user_metadata.role` for fast authorization
 - Updated via admin endpoint using Supabase Admin SDK
 
-**Username and Avatar:**
+**Name and Avatar URL:**
 - Stored in `auth.users.raw_user_meta_data`
 - Set during signup or updated via `supabase.auth.updateUser()`
-- Username defaults to "User" if not provided
-- Avatar defaults to random avatar from https://avatar.iran.liara.run/public/1-100
+- Name defaults to "User" if not provided
+- Avatar URL defaults to random avatar from https://avatar.iran.liara.run/public/1-100
 
 ---
 
@@ -1927,8 +1927,8 @@ The API uses **Supabase Row-Level Security** for access control:
 - `intrinsic_weight`: 0.5-2.0, default: 1.0
 
 **Profile:**
-- `username`: 3-50 characters, alphanumeric + underscore + hyphen, required
-- `avatar`: Must be valid HTTP/HTTPS URL
+- `name`: 3-50 characters, alphanumeric + underscore + hyphen, required
+- `avatar_url`: Must be valid HTTP/HTTPS URL
 
 ---
 

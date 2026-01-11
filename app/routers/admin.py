@@ -46,8 +46,8 @@ class UserInfo(BaseModel):
     """User information for admin list view."""
     id: str
     email: str
-    username: str
-    avatar: Optional[str]
+    name: str
+    avatar_url: Optional[str]
     role: str
     credits: Optional[float]
     total_spent: Optional[float]
@@ -122,7 +122,7 @@ async def update_user_role(
 async def list_users(
     page: int = Query(default=1, ge=1, description="Page number (1-based)"),
     page_size: int = Query(default=25, ge=1, le=100, description="Items per page"),
-    sort_by: Literal["email", "username", "role", "created_at"] = Query(default="created_at", description="Field to sort by"),
+    sort_by: Literal["email", "name", "role", "created_at"] = Query(default="created_at", description="Field to sort by"),
     sort_order: Literal["asc", "desc"] = Query(default="desc", description="Sort order"),
     role: Optional[Literal["user", "pro", "admin"]] = Query(default=None, description="Filter by role"),
     search: Optional[str] = Query(default=None, description="Search by email or username (case-insensitive)"),
@@ -137,14 +137,14 @@ async def list_users(
     **Query Parameters:**
     - `page`: Page number (1-based, minimum: 1)
     - `page_size`: Items per page (minimum: 1, maximum: 100)
-    - `sort_by`: Field to sort by (email, username, role, created_at)
+    - `sort_by`: Field to sort by (email, name, role, created_at)
     - `sort_order`: Sort direction (asc or desc)
     - `role`: Filter by user role (user, pro, admin) - optional
-    - `search`: Search in email or username (case-insensitive) - optional
+    - `search`: Search in email or name (case-insensitive) - optional
     
     **Returns:**
     Paginated list of users with metadata including:
-    - User ID, email, username, avatar, role, created_at
+    - User ID, email, name, avatar_url, role, created_at
     - Total count, current page, total pages
     - Navigation flags (has_next, has_prev)
     
@@ -152,10 +152,10 @@ async def list_users(
     - Must be authenticated as admin
     
     **Notes:**
-    - Username defaults to "User" if not set
-    - Avatar can be null if not set
+    - Name defaults to "User" if not set
+    - Avatar URL can be null if not set
     - Role defaults to "user" if not set in user_metadata
-    - Search is case-insensitive and matches substrings in email or username
+    - Search is case-insensitive and matches substrings in email or name
     """
     try:
         admin_client = get_admin_client()
@@ -193,8 +193,8 @@ async def list_users(
             
             # Extract from user_metadata
             raw_user_meta = getattr(user, 'user_metadata', {}) or {}
-            username = raw_user_meta.get('username', 'User')
-            avatar = raw_user_meta.get('avatar')
+            name = raw_user_meta.get('name', 'User')
+            avatar_url = raw_user_meta.get('avatar_url')
             user_role = raw_user_meta.get('role', 'user')
             
             # Extract role from user_metadata
@@ -215,14 +215,14 @@ async def list_users(
             # Apply search filter (case-insensitive substring match)
             if search:
                 search_lower = search.lower()
-                if search_lower not in email.lower() and search_lower not in username.lower():
+                if search_lower not in email.lower() and search_lower not in name.lower():
                     continue
             
             user_list.append(UserInfo(
                 id=user_id,
                 email=email,
-                username=username,
-                avatar=avatar,
+                name=name,
+                avatar_url=avatar_url,
                 role=user_role,
                 credits=credits,
                 total_spent=total_spent,
@@ -233,8 +233,8 @@ async def list_users(
         reverse = (sort_order == "desc")
         if sort_by == "email":
             user_list.sort(key=lambda u: u.email.lower(), reverse=reverse)
-        elif sort_by == "username":
-            user_list.sort(key=lambda u: u.username.lower(), reverse=reverse)
+        elif sort_by == "name":
+            user_list.sort(key=lambda u: u.name.lower(), reverse=reverse)
         elif sort_by == "role":
             user_list.sort(key=lambda u: u.role, reverse=reverse)
         elif sort_by == "created_at":
